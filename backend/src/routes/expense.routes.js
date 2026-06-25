@@ -1,0 +1,10 @@
+const router = require('express').Router();
+const { getExpenses, createExpense, updateExpense, deleteExpense, getMonthlySummary } = require('../controllers/expense.controller');
+const { protect } = require('../middleware/auth.middleware');
+router.use(protect);
+router.get('/', getExpenses);
+router.get('/summary/:month/:year', getMonthlySummary);
+router.post('/', createExpense);
+router.put('/:id', updateExpense);
+router.delete('/:id', deleteExpense);
+module.exports = router;

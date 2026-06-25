@@ -1,0 +1,130 @@
+import { useQuery } from '@tanstack/react-query';
+import { dashboardApi } from '../services/api';
+import { formatCurrency } from '../lib/utils';
+import { DashboardData } from '../types';
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { TrendingUp, TrendingDown, DollarSign, Users, CreditCard, Wallet, AlertCircle, Activity } from 'lucide-react';
+
+const StatCard = ({ title, value, icon: Icon, color, sub }: any) => (
+  <div className="bg-white rounded-xl border p-5 flex items-start gap-4">
+    <div className={`w-11 h-11 rounded-lg flex items-center justify-center flex-shrink-0 ${color}`}>
+      <Icon className="w-5 h-5 text-white" />
+    </div>
+    <div className="flex-1 min-w-0">
+      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">{title}</p>
+      <p className="text-xl font-bold text-gray-900 truncate">{value}</p>
+      {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+    </div>
+  </div>
+);
+
+export default function DashboardPage() {
+  const { data, isLoading } = useQuery<DashboardData>({
+    queryKey: ['dashboard'],
+    queryFn: () => dashboardApi.get().then((r) => r.data),
+  });
+
+  if (isLoading) return (
+    <div className="space-y-6 animate-pulse">
+      <div className="h-8 bg-gray-200 rounded w-48" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[...Array(8)].map((_, i) => <div key={i} className="h-24 bg-gray-200 rounded-xl" />)}
+      </div>
+    </div>
+  );
+
+  const c = data?.cards;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <p className="text-gray-500 text-sm mt-1">Financial overview at a glance</p>
+      </div>
+
+      {/* Revenue Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard title="Total Revenue" value={formatCurrency(c?.totalContractValue || 0)} icon={DollarSign} color="bg-indigo-500" sub="Contract value" />
+        <StatCard title="Collected" value={formatCurrency(c?.totalCollected || 0)} icon={TrendingUp} color="bg-emerald-500" sub="Total received" />
+        <StatCard title="Pending" value={formatCurrency(c?.totalPending || 0)} icon={AlertCircle} color="bg-amber-500" sub="To be collected" />
+        <StatCard title="This Month" value={formatCurrency(c?.currentMonthRevenue || 0)} icon={Activity} color="bg-blue-500" sub="Revenue" />
+      </div>
+
+      {/* Expense Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard title="Month Expenses" value={formatCurrency(c?.currentMonthExpenses || 0)} icon={TrendingDown} color="bg-red-500" sub="Total outflows" />
+        <StatCard title="Salary Expense" value={formatCurrency(c?.salaryExpense || 0)} icon={Wallet} color="bg-purple-500" sub="This month" />
+        <StatCard title="EMI Expense" value={formatCurrency(c?.emiExpense || 0)} icon={CreditCard} color="bg-orange-500" sub="This month" />
+        <StatCard
+          title="Net Profit"
+          value={formatCurrency(c?.netProfit || 0)}
+          icon={TrendingUp}
+          color={(c?.netProfit || 0) >= 0 ? 'bg-emerald-500' : 'bg-red-500'}
+          sub="This month"
+        />
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-6">
+        {/* Revenue & Expense Trend */}
+        <div className="lg:col-span-2 bg-white rounded-xl border p-5">
+          <h3 className="font-semibold text-gray-900 mb-4">Revenue vs Expense Trend</h3>
+          <ResponsiveContainer width="100%" height={240}>
+            <AreaChart data={data?.revenueTrend}>
+              <defs>
+                <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="colorExpense" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#ef4444" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `₹${(v/1000).toFixed(0)}k`} />
+              <Tooltip formatter={(v: any) => formatCurrency(v)} />
+              <Legend />
+              <Area type="monotone" dataKey="income" name="Income" stroke="#6366f1" fill="url(#colorIncome)" strokeWidth={2} />
+              <Area type="monotone" dataKey="expense" name="Expense" stroke="#ef4444" fill="url(#colorExpense)" strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Top Pending Clients */}
+        <div className="bg-white rounded-xl border p-5">
+          <h3 className="font-semibold text-gray-900 mb-4">Top Pending Clients</h3>
+          {data?.topPendingClients?.length === 0 ? (
+            <p className="text-gray-400 text-sm text-center py-8">No pending clients 🎉</p>
+          ) : (
+            <div className="space-y-3">
+              {data?.topPendingClients?.map((client, i) => (
+                <div key={client._id} className="flex items-center gap-3">
+                  <span className="w-6 h-6 rounded-full bg-gray-100 text-gray-600 text-xs flex items-center justify-center font-medium flex-shrink-0">{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{client.name}</p>
+                    <p className="text-xs text-red-500 font-medium">{formatCurrency(client.pendingAmount)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Profit Trend */}
+      <div className="bg-white rounded-xl border p-5">
+        <h3 className="font-semibold text-gray-900 mb-4">Profit Trend (Last 6 Months)</h3>
+        <ResponsiveContainer width="100%" height={200}>
+          <BarChart data={data?.revenueTrend}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `₹${(v/1000).toFixed(0)}k`} />
+            <Tooltip formatter={(v: any) => formatCurrency(v)} />
+            <Bar dataKey="profit" name="Net Profit" fill="#6366f1" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}

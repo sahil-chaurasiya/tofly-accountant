@@ -1,0 +1,47 @@
+const Payment = require('../models/Payment');
+const Expense = require('../models/Expense');
+const SalaryPayment = require('../models/SalaryPayment');
+const EMIPayment = require('../models/EMIPayment');
+const Client = require('../models/Client');
+
+exports.getReport = async (req, res) => {
+  try {
+    const { type, startDate, endDate } = req.query;
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59);
+
+    let data = {};
+    if (type === 'revenue') {
+      const payments = await Payment.find({ paymentDate: { $gte: start, $lte: end } }).populate('clientId', 'name contractValue');
+      data = { payments, total: payments.reduce((s, p) => s + p.amount, 0) };
+    } else if (type === 'expense') {
+      const expenses = await Expense.find({ expenseDate: { $gte: start, $lte: end } });
+      data = { expenses, total: expenses.reduce((s, e) => s + e.amount, 0) };
+    } else if (type === 'profit') {
+      const [payments, expenses, salaries, emis] = await Promise.all([
+        Payment.find({ paymentDate: { $gte: start, $lte: end } }),
+        Expense.find({ expenseDate: { $gte: start, $lte: end } }),
+        SalaryPayment.find({ paidDate: { $gte: start, $lte: end }, status: 'Paid' }),
+        EMIPayment.find({ paymentDate: { $gte: start, $lte: end } }),
+      ]);
+      const income = payments.reduce((s, p) => s + p.amount, 0);
+      const expenseTotal = expenses.reduce((s, e) => s + e.amount, 0);
+      const salaryTotal = salaries.reduce((s, s2) => s + s2.amountPaid, 0);
+      const emiTotal = emis.reduce((s, e) => s + e.amount, 0);
+      data = { income, expenseTotal, salaryTotal, emiTotal, totalExpenses: expenseTotal + salaryTotal + emiTotal, profit: income - expenseTotal - salaryTotal - emiTotal };
+    } else if (type === 'collection') {
+      const clients = await Client.find();
+      const collection = await Promise.all(clients.map(async (c) => {
+        const payments = await Payment.find({ clientId: c._id, paymentDate: { $gte: start, $lte: end } });
+        const collected = payments.reduce((s, p) => s + p.amount, 0);
+        return { clientName: c.name, contractValue: c.contractValue, collected, payments };
+      }));
+      data = { collection };
+    }
+
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
