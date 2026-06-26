@@ -5,7 +5,7 @@ import { formatCurrency, formatDate, getCurrentMonthYear, MONTHS } from '../lib/
 import { Plus, CheckCircle, Clock, Pencil, Trash2 } from 'lucide-react';
 
 const EmployeeModal = ({ initial, onSave, onClose }: any) => {
-  const [form, setForm] = useState(initial || { name: '', joiningDate: '', monthlySalary: '' });
+  const [form, setForm] = useState(initial || { name: '', email: '', joiningDate: '', monthlySalary: '' });
   const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }));
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
@@ -13,6 +13,7 @@ const EmployeeModal = ({ initial, onSave, onClose }: any) => {
         <h2 className="text-lg font-bold mb-4">{initial ? 'Edit Employee' : 'Add Employee'}</h2>
         <div className="space-y-3">
           <div><label className="text-sm font-medium text-gray-700">Name *</label><input className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={form.name} onChange={e => set('name', e.target.value)} /></div>
+          <div><label className="text-sm font-medium text-gray-700">Email</label><input type="email" className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" placeholder="Must match their attendance app login email" value={form.email || ''} onChange={e => set('email', e.target.value)} /></div>
           <div><label className="text-sm font-medium text-gray-700">Joining Date *</label><input type="date" className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={form.joiningDate?.split('T')[0] || ''} onChange={e => set('joiningDate', e.target.value)} /></div>
           <div><label className="text-sm font-medium text-gray-700">Monthly Salary (₹) *</label><input type="number" className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={form.monthlySalary} onChange={e => set('monthlySalary', e.target.value)} /></div>
         </div>
@@ -84,6 +85,7 @@ export default function SalariesPage() {
               {years.map(y => <option key={y} value={y}>{y}</option>)}
             </select>
           </div>
+          <p className="text-xs text-gray-400">1 paid casual leave (CL) per month · every additional leave day is deducted from salary, based on attendance app records</p>
 
           {summary && (
             <>
@@ -97,27 +99,45 @@ export default function SalariesPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b">
                     <tr>
-                      {['Employee', 'Salary', 'Status', 'Amount Paid', 'Action'].map(h => <th key={h} className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">{h}</th>)}
+                      {['Employee', 'Actual Salary', 'Leaves Taken', 'Calculated Salary', 'Status', 'Amount Paid', 'Action'].map(h => <th key={h} className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">{h}</th>)}
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {summary.summary?.map((row: any) => (
-                      <tr key={row.employee._id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 font-medium">{row.employee.name}</td>
-                        <td className="px-4 py-3">{formatCurrency(row.employee.monthlySalary)}</td>
-                        <td className="px-4 py-3">
-                          <span className={`flex items-center gap-1 text-xs font-medium w-fit px-2 py-1 rounded-full ${row.status === 'Paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                            {row.status === 'Paid' ? <CheckCircle className="w-3 h-3" /> : <Clock className="w-3 h-3" />} {row.status}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 font-medium">{row.amountPaid > 0 ? formatCurrency(row.amountPaid) : '-'}</td>
-                        <td className="px-4 py-3">
-                          {row.status === 'Pending' && (
-                            <button onClick={() => markPaid.mutate({ emp: row, rec: row.salaryRecord })} className="text-xs bg-emerald-500 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-600">Mark Paid</button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                    {summary.summary?.map((row: any) => {
+                      const hasDeduction = row.attendanceSynced && row.calculatedSalary < row.employee.monthlySalary;
+                      return (
+                        <tr key={row.employee._id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 font-medium">{row.employee.name}</td>
+                          <td className="px-4 py-3">{formatCurrency(row.employee.monthlySalary)}</td>
+                          <td className="px-4 py-3">
+                            {row.attendanceSynced ? (
+                              <span className={`font-medium ${hasDeduction ? 'text-amber-600' : 'text-gray-700'}`}>
+                                {row.leavesTaken} {row.leavesTaken === 1 ? 'day' : 'days'}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-400">{row.attendanceNote || 'Not synced'}</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`font-semibold ${hasDeduction ? 'text-red-600' : 'text-gray-900'}`}>{formatCurrency(row.calculatedSalary)}</span>
+                            {hasDeduction && (
+                              <p className="text-[11px] text-red-400">-{formatCurrency(row.employee.monthlySalary - row.calculatedSalary)}</p>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`flex items-center gap-1 text-xs font-medium w-fit px-2 py-1 rounded-full ${row.status === 'Paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                              {row.status === 'Paid' ? <CheckCircle className="w-3 h-3" /> : <Clock className="w-3 h-3" />} {row.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 font-medium">{row.amountPaid > 0 ? formatCurrency(row.amountPaid) : '-'}</td>
+                          <td className="px-4 py-3">
+                            {row.status === 'Pending' && (
+                              <button onClick={() => markPaid.mutate({ emp: row, rec: row.salaryRecord })} className="text-xs bg-emerald-500 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-600">Mark Paid</button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -131,13 +151,14 @@ export default function SalariesPage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                {['Name', 'Joining Date', 'Monthly Salary', ''].map(h => <th key={h} className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">{h}</th>)}
+                {['Name', 'Email', 'Joining Date', 'Monthly Salary', ''].map(h => <th key={h} className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">{h}</th>)}
               </tr>
             </thead>
             <tbody className="divide-y">
               {employees.map((emp: any) => (
                 <tr key={emp._id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium">{emp.name}</td>
+                  <td className="px-4 py-3 text-gray-500">{emp.email || <span className="text-gray-300">—</span>}</td>
                   <td className="px-4 py-3 text-gray-500">{formatDate(emp.joiningDate)}</td>
                   <td className="px-4 py-3 font-semibold">{formatCurrency(emp.monthlySalary)}</td>
                   <td className="px-4 py-3">
