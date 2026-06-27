@@ -341,13 +341,13 @@ export default function ClientsPage() {
             <tr>
               <th className="w-8 px-3 py-3" />
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Client</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Account Manager</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Since</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Monthly</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">All-time Received</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">{MONTHS[selMonth - 1]} {selYear} — Paid</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">{MONTHS[selMonth - 1]} — Remaining</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Month Status</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Account Manager</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Work Status</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Paid On</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Actions</th>
@@ -373,9 +373,6 @@ export default function ClientsPage() {
                     <div className="font-medium text-gray-900">{client.name}</div>
                     {client.notes && <div className="text-xs text-gray-400 truncate max-w-[160px]">{client.notes}</div>}
                   </td>
-                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
-                    {client.accountManager || <span className="text-gray-300">—</span>}
-                  </td>
                   <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(client.startDate)}</td>
                   <td className="px-4 py-3 font-medium whitespace-nowrap">{formatCurrency(client.contractValue)}</td>
                   <td className="px-4 py-3 font-medium text-emerald-600 whitespace-nowrap">{formatCurrency(client.receivedAmount ?? 0)}</td>
@@ -393,6 +390,11 @@ export default function ClientsPage() {
                   {/* Month Status — compact interactive dropdown */}
                   <td className="px-4 py-3">
                     <MonthStatusDropdown status={mStatus} onSelect={s => handleMonthStatusSelect(client, s)} />
+                  </td>
+
+                  {/* Account Manager */}
+                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                    {client.accountManager || <span className="text-gray-300">—</span>}
                   </td>
 
                   {/* Work Status */}
