@@ -4,7 +4,7 @@ import { useState } from 'react';
 import {
   LayoutDashboard, Users, CreditCard, Wallet, Receipt,
   TrendingDown, BookOpen, BarChart3, Settings, LogOut,
-  Menu, X, DollarSign, FileText
+  Menu, X, FileText
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -31,11 +31,11 @@ export default function Layout() {
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 px-4 py-5 border-b">
-        <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-          <DollarSign className="w-5 h-5 text-white" />
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
+          <img src="/icon-512.png" alt="Tofly Accountant" className="w-full h-full object-contain" />
         </div>
         <div>
-          <p className="font-bold text-sm text-foreground">RevenueManager</p>
+          <p className="font-bold text-sm text-foreground">Tofly Accountant</p>
           <p className="text-xs text-muted-foreground">Agency Dashboard</p>
         </div>
       </div>
@@ -97,10 +97,10 @@ export default function Layout() {
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center">
-              <DollarSign className="w-4 h-4 text-white" />
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
+              <img src="/icon-512.png" alt="Tofly Accountant" className="w-full h-full object-contain" />
             </div>
-            <span className="font-bold text-sm">RevenueManager</span>
+            <span className="font-bold text-sm">Tofly Accountant</span>
           </div>
         </header>
 

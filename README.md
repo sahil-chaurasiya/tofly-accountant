@@ -1,4 +1,4 @@
-# 💰 Revenue Manager PWA
+# 💰 Tofly Accountant PWA
 
 A production-ready Revenue Management Progressive Web App for digital marketing agency founders.
 
@@ -132,4 +132,3 @@ NODE_ENV=development
 
 ---
 
-Built with ❤️ for digital marketing agency founders.

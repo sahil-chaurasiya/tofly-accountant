@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../lib/auth';
-import { DollarSign, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -27,11 +27,11 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-xl border p-8">
           <div className="flex items-center gap-3 mb-8">
-            <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
-              <DollarSign className="w-7 h-7 text-white" />
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center shadow-lg overflow-hidden">
+              <img src="/icon-512.png" alt="Tofly Accountant" className="w-full h-full object-contain" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">RevenueManager</h1>
+              <h1 className="text-xl font-bold text-gray-900">Tofly Accountant</h1>
               <p className="text-sm text-gray-500">Agency Finance Dashboard</p>
             </div>
           </div>

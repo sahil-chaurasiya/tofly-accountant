@@ -10,9 +10,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
       manifest: {
-        name: 'Revenue Manager',
-        short_name: 'RevManager',
-        description: 'Digital Marketing Agency Revenue Management',
+        name: 'Tofly Accountant',
+        short_name: 'Tofly',
+        description: 'Digital Marketing Agency Revenue Management - Tofly Accountant',
         theme_color: '#6366f1',
         background_color: '#ffffff',
         display: 'standalone',

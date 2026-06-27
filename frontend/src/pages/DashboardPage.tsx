@@ -3,7 +3,7 @@ import { dashboardApi } from '../services/api';
 import { formatCurrency } from '../lib/utils';
 import { DashboardData } from '../types';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { TrendingUp, TrendingDown, DollarSign, Users, CreditCard, Wallet, AlertCircle, Activity, ArrowRight } from 'lucide-react';
+import { TrendingUp, TrendingDown, IndianRupee, Users, CreditCard, Wallet, AlertCircle, Activity, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const StatCard = ({ title, value, icon: Icon, color, sub, to }: any) => (
@@ -52,7 +52,7 @@ export default function DashboardPage() {
         <StatCard
           title="Total Revenue"
           value={formatCurrency(c?.totalContractValue || 0)}
-          icon={DollarSign}
+          icon={IndianRupee}
           color="bg-indigo-500"
           sub="Contract value"
           to="/clients"
