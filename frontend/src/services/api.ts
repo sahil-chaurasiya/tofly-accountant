@@ -95,4 +95,18 @@ export const reportsApi = {
   get: (params: any) => api.get('/reports', { params }),
 };
 
+// Services
+export const servicesApi = {
+  getAll: () => api.get('/services'),
+  create: (data: any) => api.post('/services', data),
+  update: (id: string, data: any) => api.put(`/services/${id}`, data),
+  delete: (id: string) => api.delete(`/services/${id}`),
+};
+
 export default api;
+
+// Company Settings
+export const companySettingsApi = {
+  get: () => api.get('/company-settings'),
+  update: (data: any) => api.put('/company-settings', data),
+};

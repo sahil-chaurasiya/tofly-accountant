@@ -14,6 +14,8 @@ const emiRoutes = require('./routes/emi.routes');
 const accountingRoutes = require('./routes/accounting.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const reportRoutes = require('./routes/report.routes');
+const serviceRoutes = require('./routes/service.routes');
+const companySettingsRoutes = require('./routes/companySettings.routes');
 
 const app = express();
 
@@ -36,6 +38,8 @@ app.use('/api/emis', emiRoutes);
 app.use('/api/accounting', accountingRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/services', serviceRoutes);
+app.use('/api/company-settings', companySettingsRoutes);
 
 app.get('/api/health', (req, res) => res.json({ status: 'OK', timestamp: new Date() }));
 

@@ -12,6 +12,7 @@ import EMIPage from './pages/EMIPage';
 import AccountingPage from './pages/AccountingPage';
 import ReportsPage from './pages/ReportsPage';
 import SettingsPage from './pages/SettingsPage';
+import InvoicePage from './pages/InvoicePage';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { token, isLoading } = useAuth();
@@ -35,6 +36,7 @@ function AppRoutes() {
         <Route path="emi" element={<EMIPage />} />
         <Route path="accounting" element={<AccountingPage />} />
         <Route path="reports" element={<ReportsPage />} />
+        <Route path="invoice" element={<InvoicePage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
     </Routes>

@@ -105,3 +105,26 @@ export interface AuthUser {
   email: string;
   name: string;
 }
+
+export interface Service {
+  _id: string;
+  name: string;
+  description: string;
+  price: number;
+  isActive: boolean;
+  createdAt: string;
+}
+export interface CompanySettings {
+  _id?: string;
+  companyName: string;
+  address: string;
+  tagline: string;
+  phone1: string;
+  phone2: string;
+  accountHolder: string;
+  accountType: string;
+  accountNumber: string;
+  ifsc: string;
+  branch: string;
+  upi: string;
+}
