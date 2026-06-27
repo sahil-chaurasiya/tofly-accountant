@@ -32,18 +32,20 @@ const seed = async () => {
     { name: 'RealEstate Hub', startDate: new Date('2024-05-15'), contractValue: 95000, notes: 'Lead generation' },
   ]);
 
-  // Payments for clients
+  // Payments for clients — now includes month + year fields
   const now = new Date();
+  const m = now.getMonth() + 1;
+  const y = now.getFullYear();
+
   await Payment.insertMany([
-    { clientId: clients[0]._id, amount: 40000, paymentDate: new Date('2024-01-20'), paymentMethod: 'Bank Transfer', remarks: 'First installment' },
-    { clientId: clients[0]._id, amount: 40000, paymentDate: new Date('2024-02-20'), paymentMethod: 'Bank Transfer', remarks: 'Second installment' },
-    { clientId: clients[1]._id, amount: 30000, paymentDate: new Date('2024-02-05'), paymentMethod: 'UPI', remarks: 'Advance' },
-    { clientId: clients[1]._id, amount: 55000, paymentDate: new Date('2024-03-05'), paymentMethod: 'Bank Transfer', remarks: 'Final payment' },
-    { clientId: clients[2]._id, amount: 20000, paymentDate: new Date('2024-03-15'), paymentMethod: 'Cheque', remarks: 'Partial payment' },
-    { clientId: clients[3]._id, amount: 45000, paymentDate: new Date('2024-04-05'), paymentMethod: 'Bank Transfer', remarks: 'Full payment' },
-    // Current month payments
-    { clientId: clients[4]._id, amount: 30000, paymentDate: now, paymentMethod: 'Bank Transfer', remarks: 'Advance' },
-    { clientId: clients[0]._id, amount: 20000, paymentDate: now, paymentMethod: 'UPI', remarks: 'Monthly retainer' },
+    { clientId: clients[0]._id, amount: 40000, paymentDate: new Date('2024-01-20'), month: 1, year: 2024, paymentMethod: 'Bank Transfer', remarks: 'First installment' },
+    { clientId: clients[0]._id, amount: 40000, paymentDate: new Date('2024-02-20'), month: 2, year: 2024, paymentMethod: 'Bank Transfer', remarks: 'Second installment' },
+    { clientId: clients[1]._id, amount: 30000, paymentDate: new Date('2024-02-05'), month: 2, year: 2024, paymentMethod: 'UPI', remarks: 'Advance' },
+    { clientId: clients[1]._id, amount: 55000, paymentDate: new Date('2024-03-05'), month: 3, year: 2024, paymentMethod: 'Bank Transfer', remarks: 'Final payment' },
+    { clientId: clients[2]._id, amount: 20000, paymentDate: new Date('2024-03-15'), month: 3, year: 2024, paymentMethod: 'Cheque', remarks: 'Partial payment' },
+    { clientId: clients[3]._id, amount: 45000, paymentDate: new Date('2024-04-05'), month: 4, year: 2024, paymentMethod: 'Bank Transfer', remarks: 'Full payment' },
+    { clientId: clients[4]._id, amount: 30000, paymentDate: now, month: m, year: y, paymentMethod: 'Bank Transfer', remarks: 'Advance' },
+    { clientId: clients[0]._id, amount: 20000, paymentDate: now, month: m, year: y, paymentMethod: 'UPI', remarks: 'Monthly retainer' },
   ]);
 
   // Employees
@@ -55,7 +57,6 @@ const seed = async () => {
     { name: 'Anjali Singh', joiningDate: new Date('2024-01-10'), monthlySalary: 22000 },
   ]);
 
-  const m = now.getMonth() + 1, y = now.getFullYear();
   await SalaryPayment.insertMany([
     { employeeId: employees[0]._id, month: m, year: y, amountPaid: 35000, paidDate: new Date(), status: 'Paid' },
     { employeeId: employees[1]._id, month: m, year: y, amountPaid: 28000, paidDate: new Date(), status: 'Paid' },

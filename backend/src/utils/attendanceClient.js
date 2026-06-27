@@ -1,6 +1,6 @@
 /**
- * Pulls leave data straight out of the Attendance App's MongoDB database, so the
- * Salaries page can factor unpaid leave into the salary calc.
+ * Pulls attendance data straight out of the Attendance App's MongoDB database, so
+ * the Salaries page can factor absences into the salary calc.
  *
  * This connects directly to the attendance app's own database (a separate
  * connection from the accountant app's main one) and only ever reads from it
@@ -10,6 +10,11 @@
  *   ATTENDANCE_MONGODB_URI   connection string for the attendance app's database
  *
  * Employees are matched by email (Employee.email <-> attendance app User.email).
+ *
+ * Logic is deliberately simple: count attendance records explicitly marked
+ * `absent` or `on_leave` in a given month, excluding Sundays. Nothing
+ * inferred, nothing gap-filled — just what's actually in the database.
+ *
  * If it's missing/unreachable/misconfigured, this fails soft — callers get back
  * { synced: false, error } instead of a thrown exception, so a down/misconfigured
  * attendance DB never breaks the Salaries page itself.
@@ -23,7 +28,7 @@ const ATTENDANCE_MONGODB_URI = process.env.ATTENDANCE_MONGODB_URI;
 // process, not serverless, so one connection for the app's lifetime is fine).
 let attendanceConnection = null;
 let AttendanceUser = null;
-let AttendanceLeaveRequest = null;
+let AttendanceRecord = null;
 
 function getModels() {
   if (!attendanceConnection) {
@@ -31,56 +36,31 @@ function getModels() {
       serverSelectionTimeoutMS: 8000,
     });
 
-    // Minimal, read-only schemas — `strict: false` so we don't need to mirror
-    // every field from the attendance app's real models, just the ones we read.
     const userSchema = new mongoose.Schema(
       { name: String, email: String },
       { strict: false, collection: 'users' }
     );
-    const leaveSchema = new mongoose.Schema(
-      {
-        userId: mongoose.Schema.Types.ObjectId,
-        leaveType: String,
-        startDate: String,
-        endDate: String,
-        totalDays: Number,
-        status: String,
-      },
-      { strict: false, collection: 'leaverequests' }
+    const attendanceSchema = new mongoose.Schema(
+      { userId: mongoose.Schema.Types.ObjectId, date: String, status: String },
+      { strict: false, collection: 'attendances' }
     );
 
     AttendanceUser = attendanceConnection.model('AttendanceUser', userSchema);
-    AttendanceLeaveRequest = attendanceConnection.model('AttendanceLeaveRequest', leaveSchema);
+    AttendanceRecord = attendanceConnection.model('AttendanceRecord', attendanceSchema);
   }
-  return { AttendanceUser, AttendanceLeaveRequest };
-}
-
-// Counts Mon-Sat days shared between [leaveStart, leaveEnd] and [rangeStart, rangeEnd].
-// Sundays are excluded to match the attendance app's own working-day convention
-// (see countWorkingDays in its leaveController.js).
-function countOverlapDays(leaveStart, leaveEnd, rangeStart, rangeEnd) {
-  const start = leaveStart > rangeStart ? leaveStart : rangeStart;
-  const end = leaveEnd < rangeEnd ? leaveEnd : rangeEnd;
-  if (start > end) return 0;
-  let count = 0;
-  const cur = new Date(`${start}T00:00:00`);
-  const last = new Date(`${end}T00:00:00`);
-  while (cur <= last) {
-    if (cur.getDay() !== 0) count++;
-    cur.setDate(cur.getDate() + 1);
-  }
-  return count;
+  return { AttendanceUser, AttendanceRecord };
 }
 
 /**
- * Fetches approved leave for a given month/year from the Attendance App's DB.
+ * Fetches the count of "absent" / "on_leave" days for a given month/year, per
+ * employee email, from the Attendance App's DB. Sundays are excluded.
  *
  * Returns:
  *   {
- *     synced: boolean,              // false if the attendance DB couldn't be reached/isn't configured
+ *     synced: boolean,         // false if the attendance DB couldn't be reached/isn't configured
  *     error: string|null,
- *     emails: Set<string>,          // lower-cased emails of every attendance-app user that has one
- *     leavesByEmail: { [lowerCasedEmail]: numberOfLeaveDaysInMonth }
+ *     emails: Set<string>,     // lower-cased emails of every attendance-app user that has one
+ *     leavesByEmail: { [lowerCasedEmail]: numberOfAbsentDaysInMonth }
  *   }
  */
 async function getLeaveSummaryForMonth(month, year) {
@@ -94,13 +74,9 @@ async function getLeaveSummaryForMonth(month, year) {
   }
 
   try {
-    const { AttendanceUser, AttendanceLeaveRequest } = getModels();
+    const { AttendanceUser, AttendanceRecord } = getModels();
 
-    const lastDay = new Date(year, month, 0).getDate();
-    const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
-    const monthEnd = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-
-    const users = await AttendanceUser.find({}, { name: 1, email: 1 }).lean();
+    const users = await AttendanceUser.find({}, { email: 1 }).lean();
     const emailByUserId = {};
     const emails = new Set();
     for (const user of users) {
@@ -110,21 +86,25 @@ async function getLeaveSummaryForMonth(month, year) {
       emails.add(email);
     }
 
-    // Only pull leave requests that could possibly overlap this month — cheaper
-    // than fetching a whole year and filtering in JS.
-    const leaves = await AttendanceLeaveRequest.find({
-      status: 'approved',
-      startDate: { $lte: monthEnd },
-      endDate: { $gte: monthStart },
-    }).lean();
+    const lastDay = new Date(year, month, 0).getDate();
+    const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
+    const monthEnd = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+    const records = await AttendanceRecord.find(
+      { status: { $in: ['absent', 'on_leave'] }, date: { $gte: monthStart, $lte: monthEnd } },
+      { userId: 1, date: 1 }
+    ).lean();
 
     const leavesByEmail = {};
-    for (const leave of leaves) {
-      const email = emailByUserId[leave.userId?.toString()];
+    for (const record of records) {
+      const uid = record.userId?.toString();
+      const email = uid && emailByUserId[uid];
       if (!email) continue;
-      const overlapDays = countOverlapDays(leave.startDate, leave.endDate, monthStart, monthEnd);
-      if (overlapDays <= 0) continue;
-      leavesByEmail[email] = (leavesByEmail[email] || 0) + overlapDays;
+
+      const day = new Date(`${record.date}T00:00:00`).getDay();
+      if (day === 0) continue; // skip Sundays
+
+      leavesByEmail[email] = (leavesByEmail[email] || 0) + 1;
     }
 
     return { synced: true, error: null, emails, leavesByEmail };
