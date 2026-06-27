@@ -1,19 +1,20 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { clientsApi, paymentsApi } from '../services/api';
 import { Client, Payment } from '../types';
-import { formatCurrency, formatDate, getStatusColor, getCurrentMonthYear, MONTHS } from '../lib/utils';
+import { formatCurrency, formatDate, getCurrentMonthYear, MONTHS } from '../lib/utils';
 import { Link } from 'react-router-dom';
 import {
   Plus, Search, Pencil, Trash2, Eye, LayoutGrid, Table2,
-  GripVertical, ChevronDown, ChevronUp, X, CreditCard
+  GripVertical, X, CreditCard, ChevronDown
 } from 'lucide-react';
 
 const STATUS_OPTIONS = ['All', 'Pending', 'Partial', 'Paid'];
+const WORK_STATUS_OPTIONS = ['', 'On Time', 'Delayed'];
 
 // ─── Client Form Modal ────────────────────────────────────────────────────────
 const ClientForm = ({ initial, onSave, onClose }: { initial?: any; onSave: (f: any) => void; onClose: () => void }) => {
-  const [form, setForm] = useState(initial || { name: '', startDate: '', contractValue: '', notes: '' });
+  const [form, setForm] = useState(initial || { name: '', startDate: '', contractValue: '', notes: '', accountManager: '', workStatus: '' });
   const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }));
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
@@ -23,6 +24,7 @@ const ClientForm = ({ initial, onSave, onClose }: { initial?: any; onSave: (f: a
           <div><label className="text-sm font-medium text-gray-700">Client Name *</label><input className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={form.name} onChange={e => set('name', e.target.value)} placeholder="Company name" /></div>
           <div><label className="text-sm font-medium text-gray-700">Start Date *</label><input type="date" className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={form.startDate?.split('T')[0] || ''} onChange={e => set('startDate', e.target.value)} /></div>
           <div><label className="text-sm font-medium text-gray-700">Monthly Contract Value (₹) *</label><input type="number" className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={form.contractValue} onChange={e => set('contractValue', e.target.value)} placeholder="e.g. 15000" /></div>
+          <div><label className="text-sm font-medium text-gray-700">Account Manager</label><input className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={form.accountManager} onChange={e => set('accountManager', e.target.value)} placeholder="Manager name" /></div>
           <div><label className="text-sm font-medium text-gray-700">Notes</label><textarea className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" rows={3} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Service details..." /></div>
         </div>
         <div className="flex gap-3 mt-5">
@@ -51,7 +53,6 @@ const MonthlyPaymentModal = ({
     remarks: existingPayment?.remarks ?? '',
   });
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
@@ -95,11 +96,56 @@ const MonthlyPaymentModal = ({
   );
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-const MonthPaymentBadge = ({ status, paid, remaining, contractValue }: any) => {
-  if (status === 'Paid') return <span className="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium">✓ Paid {formatCurrency(paid)}</span>;
-  if (status === 'Partial') return <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-medium">⚡ {formatCurrency(paid)} / {formatCurrency(contractValue)}</span>;
-  return <span className="text-xs px-2 py-1 rounded-full bg-red-100 text-red-500 font-medium">✗ Unpaid</span>;
+// ─── Month Status Dropdown ────────────────────────────────────────────────────
+const STATUS_CFG = {
+  Unpaid:  { dot: 'bg-red-400',     text: 'text-red-500',     bg: 'bg-red-50',     border: 'border-red-200',     label: 'Unpaid'  },
+  Partial: { dot: 'bg-amber-400',   text: 'text-amber-600',   bg: 'bg-amber-50',   border: 'border-amber-200',   label: 'Partial' },
+  Paid:    { dot: 'bg-emerald-400', text: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200', label: 'Paid'    },
+};
+
+const MonthStatusDropdown = ({ status, onSelect }: { status: string; onSelect: (s: string) => void }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const cfg = STATUS_CFG[status as keyof typeof STATUS_CFG] ?? STATUS_CFG.Unpaid;
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative inline-block">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={`inline-flex items-center gap-1.5 pl-2 pr-2 py-1 rounded-md border text-xs font-medium transition-colors hover:brightness-95 ${cfg.bg} ${cfg.border} ${cfg.text}`}
+      >
+        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot}`} />
+        {cfg.label}
+        <ChevronDown className={`w-3 h-3 opacity-60 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute z-40 top-full mt-1 left-0 bg-white rounded-lg shadow-lg border border-gray-100 py-1 min-w-[110px]">
+          {(Object.keys(STATUS_CFG) as (keyof typeof STATUS_CFG)[]).map(opt => {
+            const c = STATUS_CFG[opt];
+            const isActive = opt === status;
+            return (
+              <button
+                key={opt}
+                onClick={() => { setOpen(false); if (!isActive) onSelect(opt); }}
+                className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs font-medium transition-colors ${isActive ? 'opacity-40 cursor-default' : 'hover:bg-gray-50'}`}
+              >
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${c.dot}`} />
+                <span className={c.text}>{c.label}</span>
+                {isActive && <span className="ml-auto text-gray-300">✓</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 };
 
 // ─── Draggable Hook ───────────────────────────────────────────────────────────
@@ -120,7 +166,6 @@ function useDragOrder<T extends { _id: string }>(items: T[]) {
   const syncOrder = useCallback((newItems: T[]) => {
     setOrder(prev => {
       if (prev.length === 0) return prev;
-      // keep existing order, append any new items
       const existing = new Set(newItems.map(i => i._id));
       const filtered = prev.filter(id => existing.has(id));
       newItems.forEach(i => { if (!filtered.includes(i._id)) filtered.push(i._id); });
@@ -162,7 +207,6 @@ export default function ClientsPage() {
   const [clientModal, setClientModal] = useState<null | 'add' | Client>(null);
   const [payModal, setPayModal] = useState<null | { client: Client; existingPayment: Payment | null }>(null);
 
-  // All clients — backend now returns selPaid/selRemaining/status for the selected month
   const { data: rawClients = [], isLoading } = useQuery<Client[]>({
     queryKey: ['clients', search, statusFilter, selMonth, selYear],
     queryFn: () => clientsApi.getAll({
@@ -174,8 +218,6 @@ export default function ClientsPage() {
   });
 
   const { orderedItems: clients, syncOrder, onDragStart, onDragOver, onDrop } = useDragOrder(rawClients);
-
-  // keep order in sync when query data changes
   useState(() => { syncOrder(rawClients); });
 
   const createClient = useMutation({ mutationFn: (d: any) => clientsApi.create(d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['clients'] }); setClientModal(null); } });
@@ -196,16 +238,27 @@ export default function ClientsPage() {
     else createPayment.mutate(data);
   };
 
+  const handleMonthStatusSelect = (client: Client, newStatus: string) => {
+    const payment = (client as any).selPayment ?? null;
+    if (newStatus === 'Paid' || newStatus === 'Partial') {
+      setPayModal({ client, existingPayment: payment });
+    }
+  };
+
+  const handleWorkStatusChange = (client: Client, newStatus: string) => {
+    updateClient.mutate({ id: client._id, data: { workStatus: newStatus } });
+  };
+
   const years = Array.from({ length: 4 }, (_, i) => now.year - i);
 
   // ── Card View ───────────────────────────────────────────────────────────────
   const CardView = () => (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {clients.map((client: any) => {
-        const mStatus  = client.status;
-        const paid     = client.selPaid ?? 0;
+        const mStatus   = client.status;
+        const paid      = client.selPaid ?? 0;
         const remaining = client.selRemaining ?? client.contractValue;
-        const payment  = client.selPayment ?? null;
+        const payment   = client.selPayment ?? null;
         const totalReceived = client.receivedAmount ?? 0;
         const pct = client.totalDue > 0 ? Math.min(100, (totalReceived / client.totalDue) * 100) : 0;
         return (
@@ -217,41 +270,49 @@ export default function ClientsPage() {
             onDrop={onDrop}
             className="bg-white rounded-xl border p-5 hover:shadow-md transition cursor-grab active:cursor-grabbing select-none"
           >
-            {/* header */}
             <div className="flex items-start justify-between mb-3">
               <div className="flex items-start gap-2">
                 <GripVertical className="w-4 h-4 text-gray-300 mt-0.5 flex-shrink-0" />
                 <div>
                   <h3 className="font-semibold text-gray-900">{client.name}</h3>
                   <p className="text-xs text-gray-400 mt-0.5">Since {formatDate(client.startDate)}</p>
+                  {client.accountManager && <p className="text-xs text-gray-500 mt-0.5">👤 {client.accountManager}</p>}
                 </div>
               </div>
-              <span className={`text-xs px-2 py-1 rounded-full border font-medium ${getStatusColor(mStatus)}`}>{mStatus}</span>
+              <MonthStatusDropdown status={mStatus} onSelect={s => handleMonthStatusSelect(client, s)} />
             </div>
 
-            {/* overall stats */}
             <div className="space-y-1.5 mb-3">
               <div className="flex justify-between text-sm"><span className="text-gray-500">Monthly</span><span className="font-medium">{formatCurrency(client.contractValue)}</span></div>
               <div className="flex justify-between text-sm"><span className="text-gray-500">All-time Received</span><span className="font-medium text-emerald-600">{formatCurrency(totalReceived)}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-gray-500">All-time Outstanding</span><span className="font-medium text-red-500">{formatCurrency(client.pendingAmount ?? 0)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gray-500">Outstanding</span><span className="font-medium text-red-500">{formatCurrency(client.pendingAmount ?? 0)}</span></div>
             </div>
 
             <div className="w-full bg-gray-100 rounded-full h-1.5 mb-3">
               <div className="bg-primary h-1.5 rounded-full" style={{ width: `${pct}%` }} />
             </div>
 
-            {/* THIS MONTH */}
+            {/* Work Status */}
+            <div className="mb-3">
+              <label className="text-xs text-gray-400 font-medium block mb-1">Work Status</label>
+              <select
+                className="w-full text-xs border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary bg-white"
+                value={client.workStatus || ''}
+                onChange={e => handleWorkStatusChange(client, e.target.value)}
+              >
+                {WORK_STATUS_OPTIONS.map(o => <option key={o} value={o}>{o || '— Select —'}</option>)}
+              </select>
+            </div>
+
             <div className="border rounded-lg p-3 mb-3 bg-gray-50">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-xs font-medium text-gray-600">{MONTHS[selMonth - 1]} {selYear}</span>
-                <MonthPaymentBadge status={mStatus} paid={paid} remaining={remaining} contractValue={client.contractValue} />
+                {mStatus === 'Paid' && <span className="text-xs text-emerald-600 font-medium">✓ {formatCurrency(paid)}</span>}
+                {mStatus === 'Partial' && <span className="text-xs text-amber-600 font-medium">⚡ {formatCurrency(paid)} / {formatCurrency(client.contractValue)}</span>}
+                {mStatus === 'Unpaid' && <span className="text-xs text-red-500 font-medium">✗ Unpaid</span>}
               </div>
-              {mStatus === 'Partial' && (
-                <p className="text-xs text-gray-400">Remaining this month: {formatCurrency(remaining)}</p>
-              )}
-              {payment && (
-                <p className="text-xs text-gray-400 mt-0.5">Paid on {formatDate(payment.paymentDate)} · {payment.paymentMethod}</p>
-              )}
+              {mStatus === 'Partial' && <p className="text-xs text-gray-400">Remaining: {formatCurrency(remaining)}</p>}
+              {payment && <p className="text-xs text-gray-400 mt-0.5">Paid on {formatDate(payment.paymentDate)} · {payment.paymentMethod}</p>}
               <button
                 onClick={() => setPayModal({ client, existingPayment: payment })}
                 className="mt-2 w-full text-xs border border-primary/30 text-primary rounded-lg py-1.5 hover:bg-primary/5 font-medium"
@@ -260,7 +321,6 @@ export default function ClientsPage() {
               </button>
             </div>
 
-            {/* actions */}
             <div className="flex gap-2">
               <Link to={`/clients/${client._id}`} className="flex-1 flex items-center justify-center gap-1 border rounded-lg py-1.5 text-xs font-medium hover:bg-gray-50"><Eye className="w-3 h-3" /> View</Link>
               <button onClick={() => setClientModal(client)} className="flex-1 flex items-center justify-center gap-1 border rounded-lg py-1.5 text-xs font-medium hover:bg-gray-50"><Pencil className="w-3 h-3" /> Edit</button>
@@ -281,16 +341,14 @@ export default function ClientsPage() {
             <tr>
               <th className="w-8 px-3 py-3" />
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Client</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Account Manager</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Since</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Monthly</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">All-time Received</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">
-                {MONTHS[selMonth - 1]} {selYear} — Paid
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">
-                {MONTHS[selMonth - 1]} — Remaining
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Status</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">{MONTHS[selMonth - 1]} {selYear} — Paid</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">{MONTHS[selMonth - 1]} — Remaining</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Month Status</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Work Status</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Paid On</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
@@ -315,18 +373,15 @@ export default function ClientsPage() {
                     <div className="font-medium text-gray-900">{client.name}</div>
                     {client.notes && <div className="text-xs text-gray-400 truncate max-w-[160px]">{client.notes}</div>}
                   </td>
+                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                    {client.accountManager || <span className="text-gray-300">—</span>}
+                  </td>
                   <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(client.startDate)}</td>
                   <td className="px-4 py-3 font-medium whitespace-nowrap">{formatCurrency(client.contractValue)}</td>
                   <td className="px-4 py-3 font-medium text-emerald-600 whitespace-nowrap">{formatCurrency(client.receivedAmount ?? 0)}</td>
-
-                  {/* This month paid */}
                   <td className="px-4 py-3 font-semibold whitespace-nowrap">
-                    {paid > 0
-                      ? <span className="text-emerald-600">{formatCurrency(paid)}</span>
-                      : <span className="text-gray-300">—</span>}
+                    {paid > 0 ? <span className="text-emerald-600">{formatCurrency(paid)}</span> : <span className="text-gray-300">—</span>}
                   </td>
-
-                  {/* This month remaining */}
                   <td className="px-4 py-3 whitespace-nowrap">
                     {mStatus === 'Paid'
                       ? <span className="text-xs text-emerald-500 font-medium">✓ Settled</span>
@@ -335,12 +390,22 @@ export default function ClientsPage() {
                         : <span className="text-red-500 font-semibold">{formatCurrency(client.contractValue)}</span>}
                   </td>
 
-                  {/* Status */}
+                  {/* Month Status — compact interactive dropdown */}
                   <td className="px-4 py-3">
-                    <MonthPaymentBadge status={mStatus} paid={paid} remaining={remaining} contractValue={client.contractValue} />
+                    <MonthStatusDropdown status={mStatus} onSelect={s => handleMonthStatusSelect(client, s)} />
                   </td>
 
-                  {/* Paid on date */}
+                  {/* Work Status */}
+                  <td className="px-4 py-3">
+                    <select
+                      className="text-xs border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary bg-white min-w-[100px]"
+                      value={client.workStatus || ''}
+                      onChange={e => handleWorkStatusChange(client, e.target.value)}
+                    >
+                      {WORK_STATUS_OPTIONS.map(o => <option key={o} value={o}>{o || '— Select —'}</option>)}
+                    </select>
+                  </td>
+
                   <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
                     {payment ? (
                       <div>
@@ -374,7 +439,6 @@ export default function ClientsPage() {
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-5">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Clients</h1>
@@ -385,15 +449,11 @@ export default function ClientsPage() {
         </button>
       </div>
 
-      {/* Filters + View Toggle */}
       <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
-        {/* Search */}
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input className="w-full pl-9 pr-4 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary" placeholder="Search clients..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-
-        {/* Month filter */}
         <div className="flex items-center gap-2 bg-white border rounded-lg px-3 py-1.5">
           <span className="text-xs text-gray-400 font-medium uppercase">Month</span>
           <select className="text-sm border-0 outline-none bg-transparent" value={selMonth} onChange={e => setSelMonth(Number(e.target.value))}>
@@ -403,27 +463,21 @@ export default function ClientsPage() {
             {years.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
         </div>
-
-        {/* Status filter */}
         <div className="flex gap-1.5">
           {STATUS_OPTIONS.map(s => (
             <button key={s} onClick={() => setStatusFilter(s)} className={`px-3 py-2 rounded-lg text-sm font-medium border transition ${statusFilter === s ? 'bg-primary text-white border-primary' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>{s}</button>
           ))}
         </div>
-
-        {/* View toggle */}
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
           <button onClick={() => setView('table')} className={`p-2 rounded-md transition ${view === 'table' ? 'bg-white shadow-sm text-primary' : 'text-gray-400 hover:text-gray-600'}`}><Table2 className="w-4 h-4" /></button>
           <button onClick={() => setView('grid')} className={`p-2 rounded-md transition ${view === 'grid' ? 'bg-white shadow-sm text-primary' : 'text-gray-400 hover:text-gray-600'}`}><LayoutGrid className="w-4 h-4" /></button>
         </div>
       </div>
 
-      {/* Drag hint */}
       <p className="text-xs text-gray-400 flex items-center gap-1.5">
         <GripVertical className="w-3.5 h-3.5" /> Drag rows/cards to reorder — order is shared across both views
       </p>
 
-      {/* Content */}
       {isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[...Array(6)].map((_, i) => <div key={i} className="h-36 bg-gray-200 rounded-xl animate-pulse" />)}
@@ -432,7 +486,6 @@ export default function ClientsPage() {
         <div className="text-center py-16 text-gray-400">No clients found</div>
       ) : view === 'table' ? <TableView /> : <CardView />}
 
-      {/* Modals */}
       {clientModal && (
         <ClientForm
           initial={typeof clientModal === 'object' ? clientModal : undefined}

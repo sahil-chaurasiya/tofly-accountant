@@ -4,6 +4,9 @@ export interface Client {
   startDate: string;
   contractValue: number;
   notes: string;
+  accountManager: string;
+  workStatus: 'On Time' | 'Delayed' | '';
+  paymentStatus: 'Pending' | 'Partially Paid' | 'Paid' | '';
   receivedAmount: number;
   pendingAmount: number;
   status: 'Pending' | 'Partial' | 'Paid';

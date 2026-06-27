@@ -3,11 +3,15 @@ import { dashboardApi } from '../services/api';
 import { formatCurrency } from '../lib/utils';
 import { DashboardData } from '../types';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { TrendingUp, TrendingDown, DollarSign, Users, CreditCard, Wallet, AlertCircle, Activity } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Users, CreditCard, Wallet, AlertCircle, Activity, ArrowRight } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
-const StatCard = ({ title, value, icon: Icon, color, sub }: any) => (
-  <div className="bg-white rounded-xl border p-5 flex items-start gap-4">
-    <div className={`w-11 h-11 rounded-lg flex items-center justify-center flex-shrink-0 ${color}`}>
+const StatCard = ({ title, value, icon: Icon, color, sub, to }: any) => (
+  <Link
+    to={to}
+    className="bg-white rounded-xl border p-5 flex items-start gap-4 group hover:shadow-md hover:border-gray-300 transition-all duration-150 cursor-pointer"
+  >
+    <div className={`w-11 h-11 rounded-lg flex items-center justify-center flex-shrink-0 ${color} group-hover:scale-105 transition-transform duration-150`}>
       <Icon className="w-5 h-5 text-white" />
     </div>
     <div className="flex-1 min-w-0">
@@ -15,7 +19,8 @@ const StatCard = ({ title, value, icon: Icon, color, sub }: any) => (
       <p className="text-xl font-bold text-gray-900 truncate">{value}</p>
       {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
     </div>
-  </div>
+    <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-gray-500 group-hover:translate-x-0.5 transition-all duration-150 mt-1 flex-shrink-0" />
+  </Link>
 );
 
 export default function DashboardPage() {
@@ -44,30 +49,85 @@ export default function DashboardPage() {
 
       {/* Revenue Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Total Revenue" value={formatCurrency(c?.totalContractValue || 0)} icon={DollarSign} color="bg-indigo-500" sub="Contract value" />
-        <StatCard title="Collected" value={formatCurrency(c?.totalCollected || 0)} icon={TrendingUp} color="bg-emerald-500" sub="Total received" />
-        <StatCard title="Pending" value={formatCurrency(c?.totalPending || 0)} icon={AlertCircle} color="bg-amber-500" sub="To be collected" />
-        <StatCard title="This Month" value={formatCurrency(c?.currentMonthRevenue || 0)} icon={Activity} color="bg-blue-500" sub="Revenue" />
+        <StatCard
+          title="Total Revenue"
+          value={formatCurrency(c?.totalContractValue || 0)}
+          icon={DollarSign}
+          color="bg-indigo-500"
+          sub="Contract value"
+          to="/clients"
+        />
+        <StatCard
+          title="Collected"
+          value={formatCurrency(c?.totalCollected || 0)}
+          icon={TrendingUp}
+          color="bg-emerald-500"
+          sub="Total received"
+          to="/payments"
+        />
+        <StatCard
+          title="Pending"
+          value={formatCurrency(c?.totalPending || 0)}
+          icon={AlertCircle}
+          color="bg-amber-500"
+          sub="To be collected"
+          to="/clients"
+        />
+        <StatCard
+          title="This Month"
+          value={formatCurrency(c?.currentMonthRevenue || 0)}
+          icon={Activity}
+          color="bg-blue-500"
+          sub="Revenue"
+          to="/payments"
+        />
       </div>
 
       {/* Expense Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Month Expenses" value={formatCurrency(c?.currentMonthExpenses || 0)} icon={TrendingDown} color="bg-red-500" sub="Total outflows" />
-        <StatCard title="Salary Expense" value={formatCurrency(c?.salaryExpense || 0)} icon={Wallet} color="bg-purple-500" sub="This month" />
-        <StatCard title="EMI Expense" value={formatCurrency(c?.emiExpense || 0)} icon={CreditCard} color="bg-orange-500" sub="This month" />
+        <StatCard
+          title="Month Expenses"
+          value={formatCurrency(c?.currentMonthExpenses || 0)}
+          icon={TrendingDown}
+          color="bg-red-500"
+          sub="Total outflows"
+          to="/expenses"
+        />
+        <StatCard
+          title="Salary Expense"
+          value={formatCurrency(c?.salaryExpense || 0)}
+          icon={Wallet}
+          color="bg-purple-500"
+          sub="This month"
+          to="/salaries"
+        />
+        <StatCard
+          title="EMI Expense"
+          value={formatCurrency(c?.emiExpense || 0)}
+          icon={CreditCard}
+          color="bg-orange-500"
+          sub="This month"
+          to="/emi"
+        />
         <StatCard
           title="Net Profit"
           value={formatCurrency(c?.netProfit || 0)}
           icon={TrendingUp}
           color={(c?.netProfit || 0) >= 0 ? 'bg-emerald-500' : 'bg-red-500'}
           sub="This month"
+          to="/accounting"
         />
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Revenue & Expense Trend */}
         <div className="lg:col-span-2 bg-white rounded-xl border p-5">
-          <h3 className="font-semibold text-gray-900 mb-4">Revenue vs Expense Trend</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-gray-900">Revenue vs Expense Trend</h3>
+            <Link to="/reports" className="text-xs text-primary font-medium flex items-center gap-1 hover:underline">
+              Full report <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
           <ResponsiveContainer width="100%" height={240}>
             <AreaChart data={data?.revenueTrend}>
               <defs>
@@ -93,19 +153,29 @@ export default function DashboardPage() {
 
         {/* Top Pending Clients */}
         <div className="bg-white rounded-xl border p-5">
-          <h3 className="font-semibold text-gray-900 mb-4">Top Pending Clients</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-gray-900">Top Pending Clients</h3>
+            <Link to="/clients" className="text-xs text-primary font-medium flex items-center gap-1 hover:underline">
+              View all <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
           {data?.topPendingClients?.length === 0 ? (
             <p className="text-gray-400 text-sm text-center py-8">No pending clients 🎉</p>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {data?.topPendingClients?.map((client, i) => (
-                <div key={client._id} className="flex items-center gap-3">
+                <Link
+                  key={client._id}
+                  to={`/clients/${client._id}`}
+                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 group transition-colors"
+                >
                   <span className="w-6 h-6 rounded-full bg-gray-100 text-gray-600 text-xs flex items-center justify-center font-medium flex-shrink-0">{i + 1}</span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{client.name}</p>
+                    <p className="text-sm font-medium truncate group-hover:text-primary transition-colors">{client.name}</p>
                     <p className="text-xs text-red-500 font-medium">{formatCurrency(client.pendingAmount)}</p>
                   </div>
-                </div>
+                  <ArrowRight className="w-3.5 h-3.5 text-gray-300 group-hover:text-primary transition-colors flex-shrink-0" />
+                </Link>
               ))}
             </div>
           )}
@@ -114,7 +184,12 @@ export default function DashboardPage() {
 
       {/* Profit Trend */}
       <div className="bg-white rounded-xl border p-5">
-        <h3 className="font-semibold text-gray-900 mb-4">Profit Trend (Last 6 Months)</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-gray-900">Profit Trend (Last 6 Months)</h3>
+          <Link to="/accounting" className="text-xs text-primary font-medium flex items-center gap-1 hover:underline">
+            View accounting <ArrowRight className="w-3 h-3" />
+          </Link>
+        </div>
         <ResponsiveContainer width="100%" height={200}>
           <BarChart data={data?.revenueTrend}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
