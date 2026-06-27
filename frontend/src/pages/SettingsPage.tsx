@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authApi, servicesApi, companySettingsApi } from '../services/api';
 import { useAuth } from '../lib/auth';
-import { Save, CheckCircle, Plus, Pencil, Trash2, X, Building2 } from 'lucide-react';
+import { Save, CheckCircle, Plus, Pencil, Trash2, X, Building2, User, Briefcase, Info } from 'lucide-react';
 import { Service, CompanySettings } from '../types';
 
 const defaultCompany: CompanySettings = {
@@ -22,6 +22,7 @@ const defaultCompany: CompanySettings = {
 export default function SettingsPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
+  const [tab, setTab] = useState<'profile' | 'company' | 'services' | 'about'>('profile');
   const [name, setName] = useState(user?.name || '');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -202,7 +203,26 @@ export default function SettingsPage() {
         <p className="text-gray-500 text-sm mt-1">Manage your account, company details and services</p>
       </div>
 
-      {/* Profile */}
+      <div className="flex gap-1 border-b overflow-x-auto">
+        {([
+          { key: 'profile', label: 'Profile', icon: User },
+          { key: 'company', label: 'Company Details', icon: Building2 },
+          { key: 'services', label: 'Services & Pricing', icon: Briefcase },
+          { key: 'about', label: 'About', icon: Info },
+        ] as const).map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition whitespace-nowrap ${
+              tab === t.key ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <t.icon className="w-4 h-4" /> {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'profile' && (
       <div className="bg-white rounded-xl border p-6 space-y-4">
         <h3 className="font-semibold text-gray-900">Profile</h3>
         <div>
@@ -261,8 +281,9 @@ export default function SettingsPage() {
           <Save className="w-4 h-4" /> Save Changes
         </button>
       </div>
+      )}
 
-      {/* Company Details */}
+      {tab === 'company' && (
       <div className="bg-white rounded-xl border p-6 space-y-4">
         <div className="flex items-center gap-2">
           <Building2 className="w-4 h-4 text-primary" />
@@ -372,8 +393,9 @@ export default function SettingsPage() {
           <Save className="w-4 h-4" /> Save Company Details
         </button>
       </div>
+      )}
 
-      {/* Services */}
+      {tab === 'services' && (
       <div className="bg-white rounded-xl border p-6">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -498,25 +520,25 @@ export default function SettingsPage() {
           </div>
         )}
       </div>
+      )}
 
-      {/* About */}
-      <div className="bg-white rounded-xl border p-6">
-        <h3 className="font-semibold text-gray-900 mb-4">About</h3>
-        <div className="space-y-2 text-sm text-gray-500">
-          <div className="flex justify-between">
-            <span>Version</span>
-            <span className="font-medium text-gray-700">1.0.0</span>
+      {tab === 'about' && (
+      <div className="bg-white rounded-xl border overflow-hidden">
+        <div className="p-8 text-center bg-gray-50 border-b">
+          <div className="w-16 h-16 mx-auto rounded-2xl overflow-hidden shadow-sm">
+            <img src="/icon-512.png" alt="Tofly Accountant" className="w-full h-full object-contain" />
           </div>
-          <div className="flex justify-between">
-            <span>Stack</span>
-            <span className="font-medium text-gray-700">MERN + PWA</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Purpose</span>
-            <span className="font-medium text-gray-700">Revenue Management</span>
-          </div>
+          <h3 className="mt-4 font-bold text-lg text-gray-900">Tofly Accountant</h3>
+          <p className="text-sm text-gray-500 mt-1">Revenue, clients and payments — all in one place.</p>
+          <span className="inline-block mt-3 text-xs font-medium text-primary bg-primary/10 px-2.5 py-1 rounded-full">
+            Version 1.0.0
+          </span>
+        </div>
+        <div className="p-6 text-center text-xs text-gray-400">
+          Built for {company.companyName || 'your agency'} · © {new Date().getFullYear()}
         </div>
       </div>
+      )}
     </div>
   );
 }
