@@ -16,9 +16,16 @@ export interface Client {
 
 export interface Payment {
   _id: string;
-  clientId: string | { _id: string; name: string; contractValue: number };
+  clientId?: string | { _id: string; name: string; contractValue: number } | null;
+  isOneTime?: boolean;
+  customClientName?: string;
+  customClientPhone?: string;
+  purpose?: string;
+  totalAmount?: number;
   amount: number;
   paymentDate: string;
+  month?: number;
+  year?: number;
   paymentMethod: 'Bank Transfer' | 'Cash' | 'UPI' | 'Cheque' | 'Online';
   remarks: string;
   createdAt: string;
