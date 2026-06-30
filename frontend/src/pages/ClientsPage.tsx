@@ -105,9 +105,10 @@ const MonthlyPaymentModal = ({
 
 // ─── Month Status Dropdown ────────────────────────────────────────────────────
 const STATUS_CFG = {
-  Unpaid:  { dot: 'bg-red-400',     text: 'text-red-500',     bg: 'bg-red-50',     border: 'border-red-200',     label: 'Pending'  },
-  Partial: { dot: 'bg-amber-400',   text: 'text-amber-600',   bg: 'bg-amber-50',   border: 'border-amber-200',   label: 'Partial' },
-  Paid:    { dot: 'bg-emerald-400', text: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200', label: 'Paid'    },
+  Unpaid:     { dot: 'bg-red-400',     text: 'text-red-500',     bg: 'bg-red-50',     border: 'border-red-200',     label: 'Pending'     },
+  Partial:    { dot: 'bg-amber-400',   text: 'text-amber-600',   bg: 'bg-amber-50',   border: 'border-amber-200',   label: 'Partial'     },
+  Paid:       { dot: 'bg-emerald-400', text: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200', label: 'Paid'        },
+  NotStarted: { dot: 'bg-gray-300',    text: 'text-gray-400',    bg: 'bg-gray-50',    border: 'border-gray-200',    label: 'Not Started' },
 };
 
 const MonthStatusDropdown = ({ status, onSelect }: { status: string; onSelect: (s: string) => void }) => {
@@ -120,6 +121,16 @@ const MonthStatusDropdown = ({ status, onSelect }: { status: string; onSelect: (
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, []);
+
+  // Contract hadn't started yet in this month — nothing to record, show a plain badge.
+  if (status === 'NotStarted') {
+    return (
+      <span className={`inline-flex items-center gap-1.5 pl-2 pr-2 py-1 rounded-md border text-xs font-medium ${cfg.bg} ${cfg.border} ${cfg.text}`}>
+        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot}`} />
+        {cfg.label}
+      </span>
+    );
+  }
 
   return (
     <div ref={ref} className="relative inline-block">
@@ -134,7 +145,7 @@ const MonthStatusDropdown = ({ status, onSelect }: { status: string; onSelect: (
 
       {open && (
         <div className="absolute z-40 top-full mt-1 left-0 bg-white rounded-lg shadow-lg border border-gray-100 py-1 min-w-[110px]">
-          {(Object.keys(STATUS_CFG) as (keyof typeof STATUS_CFG)[]).map(opt => {
+          {(['Unpaid', 'Partial', 'Paid'] as const).map(opt => {
             const c = STATUS_CFG[opt];
             const isActive = opt === status;
             return (
@@ -259,9 +270,14 @@ export default function ClientsPage() {
   const years = Array.from({ length: 4 }, (_, i) => now.year - i);
 
   const kpis = rawClients.reduce((acc: any, c: any) => {
-    acc.totalContractValue += c.contractValue || 0;
-    acc.totalCollected += c.selPaid || 0;
-    acc.totalPending += c.selRemaining ?? Math.max(0, (c.contractValue || 0) - (c.selPaid || 0));
+    const start = c.startDate ? new Date(c.startDate) : null;
+    const startedBySelMonth = !start || start.getFullYear() < selYear ||
+      (start.getFullYear() === selYear && start.getMonth() + 1 <= selMonth);
+    if (startedBySelMonth) {
+      acc.totalContractValue += c.contractValue || 0;
+      acc.totalCollected += c.selPaid || 0;
+      acc.totalPending += c.selRemaining ?? Math.max(0, (c.contractValue || 0) - (c.selPaid || 0));
+    }
     return acc;
   }, { totalContractValue: 0, totalCollected: 0, totalPending: 0 });
 
@@ -324,15 +340,18 @@ export default function ClientsPage() {
                 {mStatus === 'Paid' && <span className="text-xs text-emerald-600 font-medium">✓ {formatCurrency(paid)}</span>}
                 {mStatus === 'Partial' && <span className="text-xs text-amber-600 font-medium">⚡ {formatCurrency(paid)} / {formatCurrency(client.contractValue)}</span>}
                 {mStatus === 'Unpaid' && <span className="text-xs text-red-500 font-medium">✗ Unpaid</span>}
+                {mStatus === 'NotStarted' && <span className="text-xs text-gray-400 font-medium">Contract not started yet</span>}
               </div>
               {mStatus === 'Partial' && <p className="text-xs text-gray-400">Remaining: {formatCurrency(remaining)}</p>}
               {payment && <p className="text-xs text-gray-400 mt-0.5">Paid on {formatDate(payment.paymentDate)} · {payment.paymentMethod}</p>}
-              <button
-                onClick={() => setPayModal({ client, existingPayment: payment })}
-                className="mt-2 w-full text-xs border border-primary/30 text-primary rounded-lg py-1.5 hover:bg-primary/5 font-medium"
-              >
-                {mStatus === 'Unpaid' ? '+ Record Payment' : '✎ Edit Payment'}
-              </button>
+              {mStatus !== 'NotStarted' && (
+                <button
+                  onClick={() => setPayModal({ client, existingPayment: payment })}
+                  className="mt-2 w-full text-xs border border-primary/30 text-primary rounded-lg py-1.5 hover:bg-primary/5 font-medium"
+                >
+                  {mStatus === 'Unpaid' ? '+ Record Payment' : '✎ Edit Payment'}
+                </button>
+              )}
             </div>
 
             <div className="flex gap-2">
@@ -398,7 +417,9 @@ export default function ClientsPage() {
                       ? <span className="text-xs text-emerald-500 font-medium">✓ Settled</span>
                       : mStatus === 'Partial'
                         ? <span className="text-amber-600 font-semibold">{formatCurrency(remaining)}</span>
-                        : <span className="text-red-500 font-semibold">{formatCurrency(client.contractValue)}</span>}
+                        : mStatus === 'NotStarted'
+                          ? <span className="text-gray-300">—</span>
+                          : <span className="text-red-500 font-semibold">{formatCurrency(client.contractValue)}</span>}
                   </td>
 
                   {/* Month Status — compact interactive dropdown */}
@@ -433,11 +454,13 @@ export default function ClientsPage() {
 
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => setPayModal({ client, existingPayment: payment })}
-                        title={mStatus === 'Unpaid' ? 'Record Payment' : 'Edit Payment'}
-                        className="p-1.5 rounded hover:bg-primary/10 text-primary"
-                      ><CreditCard className="w-3.5 h-3.5" /></button>
+                      {mStatus !== 'NotStarted' && (
+                        <button
+                          onClick={() => setPayModal({ client, existingPayment: payment })}
+                          title={mStatus === 'Unpaid' ? 'Record Payment' : 'Edit Payment'}
+                          className="p-1.5 rounded hover:bg-primary/10 text-primary"
+                        ><CreditCard className="w-3.5 h-3.5" /></button>
+                      )}
                       <Link to={`/clients/${client._id}`} className="p-1.5 rounded hover:bg-gray-100 text-gray-500"><Eye className="w-3.5 h-3.5" /></Link>
                       <button onClick={() => setClientModal(client)} className="p-1.5 rounded hover:bg-gray-100 text-gray-500"><Pencil className="w-3.5 h-3.5" /></button>
                       <button onClick={() => { if (confirm('Delete this client?')) deleteClient.mutate(client._id); }} className="p-1.5 rounded hover:bg-red-50 text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>

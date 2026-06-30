@@ -38,15 +38,24 @@ const getClientWithStats = async (client, targetMonth, targetYear) => {
   const curMonth = targetMonth || (now.getMonth() + 1);
   const curYear  = targetYear  || now.getFullYear();
 
-  // Selected month stats
-  const selPayments = payments.filter(p => p.month === curMonth && p.year === curYear);
-  const selPaid     = selPayments.reduce((s, p) => s + p.amount, 0);
-  const selRemaining = Math.max(0, client.contractValue - selPaid);
+  // Has the contract started by the selected month? (compare year-month, not exact date)
+  const start = new Date(client.startDate);
+  const startMonth = start.getMonth() + 1;
+  const startYear  = start.getFullYear();
+  const hasStarted = curYear > startYear || (curYear === startYear && curMonth >= startMonth);
+
+  // Selected month stats — clients that hadn't started yet in the selected month
+  // have no obligation for that month, so they should not show as Pending/owing anything.
+  const selPayments = hasStarted ? payments.filter(p => p.month === curMonth && p.year === curYear) : [];
+  const selPaid      = selPayments.reduce((s, p) => s + p.amount, 0);
+  const selRemaining = hasStarted ? Math.max(0, client.contractValue - selPaid) : 0;
   let status = 'Unpaid';
-  if (selPaid >= client.contractValue) status = 'Paid';
+  if (!hasStarted) status = 'NotStarted';
+  else if (selPaid >= client.contractValue) status = 'Paid';
   else if (selPaid > 0) status = 'Partial';
 
-  // All-time totals (for detail page)
+  // All-time totals (for detail page) — these are already start-date aware via buildMonthLedger,
+  // which only builds months from client.startDate onward.
   const totalReceived = payments.reduce((s, p) => s + p.amount, 0);
   const ledger = buildMonthLedger(client.startDate, client.contractValue, payments);
   const totalDue = ledger.length * client.contractValue;
@@ -54,6 +63,7 @@ const getClientWithStats = async (client, targetMonth, targetYear) => {
   return {
     ...client.toObject(),
     // Selected-month fields (used in list/table)
+    hasStarted,
     selPaid,
     selRemaining,
     selPayment: selPayments[0] || null,
@@ -76,7 +86,9 @@ exports.getClients = async (req, res) => {
     ).sort({ createdAt: -1 });
 
     const withStats = await Promise.all(clients.map(c => getClientWithStats(c, tMonth, tYear)));
-    const filtered  = status ? withStats.filter(c => c.status === status) : withStats;
+    // A client shouldn't appear at all for months before their contract started.
+    const started   = (tMonth && tYear) ? withStats.filter(c => c.hasStarted) : withStats;
+    const filtered  = status ? started.filter(c => c.status === status) : started;
     res.json(filtered);
   } catch (err) {
     res.status(500).json({ message: err.message });

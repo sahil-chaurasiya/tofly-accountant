@@ -55,8 +55,8 @@ export default function PaymentsPage() {
   const years = Array.from({ length: 4 }, (_, i) => now.year - i);
 
   const { data: payments = [], isLoading } = useQuery({
-    queryKey: ['payments'],
-    queryFn: () => paymentsApi.getAll().then(r => r.data),
+    queryKey: ['payments', selMonth, selYear],
+    queryFn: () => paymentsApi.getAll({ month: selMonth, year: selYear }).then(r => r.data),
   });
 
   const { data: clients = [] } = useQuery({
@@ -69,16 +69,14 @@ export default function PaymentsPage() {
     queryFn: () => clientsApi.getAll({ month: selMonth, year: selYear }).then(r => r.data),
   });
 
-  const createMut = useMutation({ mutationFn: (d: any) => paymentsApi.create(d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['payments'] }); setModal(null); } });
-  const updateMut = useMutation({ mutationFn: ({ id, d }: any) => paymentsApi.update(id, d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['payments'] }); setModal(null); } });
-  const deleteMut = useMutation({ mutationFn: (id: string) => paymentsApi.delete(id), onSuccess: () => qc.invalidateQueries({ queryKey: ['payments'] }) });
+  const createMut = useMutation({ mutationFn: (d: any) => paymentsApi.create(d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['payments'] }); qc.invalidateQueries({ queryKey: ['clients-month'] }); setModal(null); } });
+  const updateMut = useMutation({ mutationFn: ({ id, d }: any) => paymentsApi.update(id, d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['payments'] }); qc.invalidateQueries({ queryKey: ['clients-month'] }); setModal(null); } });
+  const deleteMut = useMutation({ mutationFn: (id: string) => paymentsApi.delete(id), onSuccess: () => { qc.invalidateQueries({ queryKey: ['payments'] }); qc.invalidateQueries({ queryKey: ['clients-month'] }); } });
 
   const handleSave = (form: any) => {
     if (modal?._id) updateMut.mutate({ id: modal._id, d: form });
     else createMut.mutate(form);
   };
-
-  const total = payments.reduce((s: number, p: any) => s + p.amount, 0);
 
   const monthKpis = monthClients.reduce((acc: any, c: any) => {
     acc.collected += c.selPaid || 0;
@@ -91,7 +89,7 @@ export default function PaymentsPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Collections</h1>
-          <p className="text-gray-500 text-sm mt-1">Total collected: <span className="font-semibold text-emerald-600">{formatCurrency(total)}</span></p>
+          <p className="text-gray-500 text-sm mt-1">{MONTHS[selMonth - 1]} {selYear} collected: <span className="font-semibold text-emerald-600">{formatCurrency(monthKpis.collected)}</span></p>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 bg-white border rounded-lg px-3 py-1.5">
@@ -109,7 +107,7 @@ export default function PaymentsPage() {
         </div>
       </div>
 
-      {/* Collection KPIs */}
+      {/* Collection KPIs for selected month */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl border p-5 flex items-start gap-4">
           <div className="w-11 h-11 rounded-lg flex items-center justify-center flex-shrink-0 bg-emerald-500">
@@ -117,8 +115,8 @@ export default function PaymentsPage() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Collected</p>
-            <p className="text-xl font-bold text-gray-900 truncate">{formatCurrency(total)}</p>
-            <p className="text-xs text-gray-400 mt-0.5">Total received</p>
+            <p className="text-xl font-bold text-gray-900 truncate">{formatCurrency(monthKpis.collected)}</p>
+            <p className="text-xs text-gray-400 mt-0.5">Received in {MONTHS[selMonth - 1]} {selYear}</p>
           </div>
         </div>
         <div className="bg-white rounded-xl border p-5 flex items-start gap-4">
@@ -126,9 +124,9 @@ export default function PaymentsPage() {
             <Activity className="w-5 h-5 text-white" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">{MONTHS[selMonth - 1]}</p>
-            <p className="text-xl font-bold text-gray-900 truncate">{formatCurrency(monthKpis.collected)}</p>
-            <p className="text-xs text-gray-400 mt-0.5">Revenue this month</p>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Payments Recorded</p>
+            <p className="text-xl font-bold text-gray-900 truncate">{payments.length}</p>
+            <p className="text-xs text-gray-400 mt-0.5">In {MONTHS[selMonth - 1]} {selYear}</p>
           </div>
         </div>
         <div className="bg-white rounded-xl border p-5 flex items-start gap-4">
@@ -147,7 +145,7 @@ export default function PaymentsPage() {
         {isLoading ? (
           <div className="p-8 text-center text-gray-400">Loading...</div>
         ) : payments.length === 0 ? (
-          <div className="p-8 text-center text-gray-400">No payments recorded</div>
+          <div className="p-8 text-center text-gray-400">No payments recorded for {MONTHS[selMonth - 1]} {selYear}</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

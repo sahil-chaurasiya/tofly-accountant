@@ -103,9 +103,10 @@ const MonthPaymentModal = ({
 // ─── Status pill ──────────────────────────────────────────────────────────────
 const StatusPill = ({ status }: { status: string }) => {
   const cfg: Record<string, { cls: string; icon: React.ReactNode; label: string }> = {
-    Paid:    { cls: 'bg-emerald-100 text-emerald-700', icon: <CheckCircle2 className="w-3 h-3" />, label: 'Paid' },
-    Partial: { cls: 'bg-amber-100 text-amber-700',    icon: <AlertCircle className="w-3 h-3" />,   label: 'Partial' },
-    Unpaid:  { cls: 'bg-red-100 text-red-500',        icon: <Clock className="w-3 h-3" />,          label: 'Unpaid' },
+    Paid:       { cls: 'bg-emerald-100 text-emerald-700', icon: <CheckCircle2 className="w-3 h-3" />, label: 'Paid' },
+    Partial:    { cls: 'bg-amber-100 text-amber-700',    icon: <AlertCircle className="w-3 h-3" />,   label: 'Partial' },
+    Unpaid:     { cls: 'bg-red-100 text-red-500',        icon: <Clock className="w-3 h-3" />,          label: 'Unpaid' },
+    NotStarted: { cls: 'bg-gray-100 text-gray-400',      icon: <Clock className="w-3 h-3" />,          label: 'Not Started' },
   };
   const c = cfg[status] ?? cfg['Unpaid'];
   return (

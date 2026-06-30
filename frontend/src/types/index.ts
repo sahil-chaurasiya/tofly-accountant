@@ -9,7 +9,7 @@ export interface Client {
   paymentStatus: 'Pending' | 'Partially Paid' | 'Paid' | '';
   receivedAmount: number;
   pendingAmount: number;
-  status: 'Pending' | 'Partial' | 'Paid';
+  status: 'Unpaid' | 'Partial' | 'Paid' | 'NotStarted';
   payments?: Payment[];
   createdAt: string;
 }
