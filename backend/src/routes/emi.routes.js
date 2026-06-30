@@ -1,11 +1,12 @@
 const router = require('express').Router();
-const { getLoans, getLoan, createLoan, updateLoan, recordEMIPayment, deleteEMIPayment } = require('../controllers/emi.controller');
+const { getLoans, getLoan, createLoan, updateLoan, deleteLoan, recordEMIPayment, deleteEMIPayment } = require('../controllers/emi.controller');
 const { protect } = require('../middleware/auth.middleware');
 router.use(protect);
 router.get('/', getLoans);
 router.post('/', createLoan);
 router.get('/:id', getLoan);
 router.put('/:id', updateLoan);
+router.delete('/:id', deleteLoan);
 router.post('/payment', recordEMIPayment);
 router.delete('/payment/:id', deleteEMIPayment);
 module.exports = router;

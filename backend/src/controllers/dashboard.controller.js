@@ -9,8 +9,8 @@ const Employee = require('../models/Employee');
 exports.getDashboard = async (req, res) => {
   try {
     const now = new Date();
-    const month = now.getMonth() + 1;
-    const year = now.getFullYear();
+    const month = req.query.month ? parseInt(req.query.month) : now.getMonth() + 1;
+    const year = req.query.year ? parseInt(req.query.year) : now.getFullYear();
     const monthStart = new Date(year, month - 1, 1);
     const monthEnd = new Date(year, month, 0, 23, 59, 59);
 
@@ -60,6 +60,8 @@ exports.getDashboard = async (req, res) => {
     }
 
     res.json({
+      month,
+      year,
       cards: { totalContractValue, totalCollected, totalPending, currentMonthRevenue, currentMonthExpenses, salaryExpense, emiExpense, netProfit },
       topPendingClients,
       revenueTrend,

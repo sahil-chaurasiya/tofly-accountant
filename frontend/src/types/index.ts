@@ -86,6 +86,8 @@ export interface MonthlyAccounting {
 }
 
 export interface DashboardData {
+  month: number;
+  year: number;
   cards: {
     totalContractValue: number;
     totalCollected: number;

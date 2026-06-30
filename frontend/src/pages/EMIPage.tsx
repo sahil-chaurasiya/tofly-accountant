@@ -2,15 +2,21 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { emiApi } from '../services/api';
 import { formatCurrency, formatDate, getStatusColor } from '../lib/utils';
-import { Plus, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight, Trash2, Pencil } from 'lucide-react';
 
-const LoanModal = ({ onSave, onClose }: any) => {
-  const [form, setForm] = useState({ name: '', originalAmount: '', monthlyEMI: '', startDate: new Date().toISOString().split('T')[0] });
+const LoanModal = ({ initial, onSave, onClose }: any) => {
+  const [form, setForm] = useState({
+    name: initial?.name || '',
+    originalAmount: initial?.originalAmount ?? '',
+    monthlyEMI: initial?.monthlyEMI ?? '',
+    startDate: initial?.startDate ? new Date(initial.startDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+  });
   const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }));
+  const isEdit = !!initial;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-        <h2 className="text-lg font-bold mb-4">Add Loan / EMI</h2>
+        <h2 className="text-lg font-bold mb-4">{isEdit ? 'Edit Loan / EMI' : 'Add Loan / EMI'}</h2>
         <div className="space-y-3">
           <div><label className="text-sm font-medium text-gray-700">Loan Name *</label><input className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Office Equipment Loan" /></div>
           <div><label className="text-sm font-medium text-gray-700">Original Amount (₹) *</label><input type="number" className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={form.originalAmount} onChange={e => set('originalAmount', e.target.value)} /></div>
@@ -19,7 +25,7 @@ const LoanModal = ({ onSave, onClose }: any) => {
         </div>
         <div className="flex gap-3 mt-5">
           <button onClick={onClose} className="flex-1 border rounded-lg py-2 text-sm font-medium hover:bg-gray-50">Cancel</button>
-          <button onClick={() => onSave({ ...form, originalAmount: Number(form.originalAmount), monthlyEMI: Number(form.monthlyEMI) })} className="flex-1 bg-primary text-white rounded-lg py-2 text-sm font-medium hover:bg-primary/90">Save</button>
+          <button onClick={() => onSave({ ...form, originalAmount: Number(form.originalAmount), monthlyEMI: Number(form.monthlyEMI) })} className="flex-1 bg-primary text-white rounded-lg py-2 text-sm font-medium hover:bg-primary/90">{isEdit ? 'Save Changes' : 'Save'}</button>
         </div>
       </div>
     </div>
@@ -51,6 +57,7 @@ const PayEMIModal = ({ loan, onSave, onClose }: any) => {
 export default function EMIPage() {
   const qc = useQueryClient();
   const [addLoan, setAddLoan] = useState(false);
+  const [editLoan, setEditLoan] = useState<any>(null);
   const [payEMI, setPayEMI] = useState<any>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -66,6 +73,14 @@ export default function EMIPage() {
   });
 
   const createLoan = useMutation({ mutationFn: (d: any) => emiApi.createLoan(d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['loans'] }); setAddLoan(false); } });
+  const updateLoan = useMutation({
+    mutationFn: ({ id, data }: any) => emiApi.updateLoan(id, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['loans'] }); qc.invalidateQueries({ queryKey: ['loan', expanded] }); setEditLoan(null); },
+  });
+  const deleteLoan = useMutation({
+    mutationFn: (id: string) => emiApi.deleteLoan(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['loans'] }); setExpanded(null); },
+  });
   const recordPayment = useMutation({
     mutationFn: (d: any) => emiApi.recordPayment(d),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['loans'] }); qc.invalidateQueries({ queryKey: ['loan', expanded] }); setPayEMI(null); },
@@ -116,6 +131,14 @@ export default function EMIPage() {
                     </div>
                     <span className={`text-xs px-2 py-1 rounded-full border font-medium ${getStatusColor(loan.status)}`}>{loan.status}</span>
                   </div>
+                  <div className="flex justify-end gap-2 -mt-2 mb-2">
+                    <button onClick={() => setEditLoan(loan)} className="p-1.5 hover:bg-gray-100 rounded" title="Edit loan">
+                      <Pencil className="w-3.5 h-3.5 text-gray-400" />
+                    </button>
+                    <button onClick={() => { if (confirm(`Delete "${loan.name}" and all its payment history? This cannot be undone.`)) deleteLoan.mutate(loan._id); }} className="p-1.5 hover:bg-red-50 rounded" title="Delete loan">
+                      <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                    </button>
+                  </div>
                   <div className="grid grid-cols-3 gap-3 mb-3 text-sm">
                     <div><p className="text-gray-400 text-xs">Original</p><p className="font-semibold">{formatCurrency(loan.originalAmount)}</p></div>
                     <div><p className="text-gray-400 text-xs">Monthly EMI</p><p className="font-semibold text-orange-500">{formatCurrency(loan.monthlyEMI)}</p></div>
@@ -164,6 +187,7 @@ export default function EMIPage() {
       )}
 
       {addLoan && <LoanModal onSave={(d: any) => createLoan.mutate(d)} onClose={() => setAddLoan(false)} />}
+      {editLoan && <LoanModal initial={editLoan} onSave={(d: any) => updateLoan.mutate({ id: editLoan._id, data: d })} onClose={() => setEditLoan(null)} />}
       {payEMI && <PayEMIModal loan={payEMI} onSave={(d: any) => recordPayment.mutate(d)} onClose={() => setPayEMI(null)} />}
     </div>
   );

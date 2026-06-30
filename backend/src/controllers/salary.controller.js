@@ -25,7 +25,11 @@ exports.getMonthlySummary = async (req, res) => {
     const m = parseInt(month);
     const y = parseInt(year);
     const employees = await Employee.find({ isActive: true });
-    const salaries = await SalaryPayment.find({ month: m, year: y }).populate('employeeId', 'name monthlySalary');
+    const rawSalaries = await SalaryPayment.find({ month: m, year: y }).populate('employeeId', 'name monthlySalary');
+    // A salary record can be orphaned if its employee was later deleted —
+    // populate() then returns null for employeeId. Filter those out so we
+    // don't crash trying to read .name/._id off null below.
+    const salaries = rawSalaries.filter((s) => s.employeeId);
 
     const leaveData = await getLeaveSummaryForMonth(m, y);
     const daysInMonth = new Date(y, m, 0).getDate();

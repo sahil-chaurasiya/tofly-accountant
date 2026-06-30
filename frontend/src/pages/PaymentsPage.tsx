@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { paymentsApi, clientsApi } from '../services/api';
-import { formatCurrency, formatDate } from '../lib/utils';
-import { Plus, Trash2, Pencil } from 'lucide-react';
+import { formatCurrency, formatDate, MONTHS, getCurrentMonthYear } from '../lib/utils';
+import { Plus, Trash2, Pencil, TrendingUp, Activity, AlertCircle, Calendar } from 'lucide-react';
 
 const PaymentModal = ({ clients, initial, onSave, onClose }: any) => {
   const [form, setForm] = useState(initial || { clientId: clients[0]?._id || '', amount: '', paymentDate: new Date().toISOString().split('T')[0], paymentMethod: 'Bank Transfer', remarks: '' });
@@ -49,6 +49,10 @@ const PaymentModal = ({ clients, initial, onSave, onClose }: any) => {
 export default function PaymentsPage() {
   const qc = useQueryClient();
   const [modal, setModal] = useState<any>(null);
+  const now = getCurrentMonthYear();
+  const [selMonth, setSelMonth] = useState(now.month);
+  const [selYear, setSelYear] = useState(now.year);
+  const years = Array.from({ length: 4 }, (_, i) => now.year - i);
 
   const { data: payments = [], isLoading } = useQuery({
     queryKey: ['payments'],
@@ -58,6 +62,11 @@ export default function PaymentsPage() {
   const { data: clients = [] } = useQuery({
     queryKey: ['clients-all'],
     queryFn: () => clientsApi.getAll().then(r => r.data),
+  });
+
+  const { data: monthClients = [] } = useQuery({
+    queryKey: ['clients-month', selMonth, selYear],
+    queryFn: () => clientsApi.getAll({ month: selMonth, year: selYear }).then(r => r.data),
   });
 
   const createMut = useMutation({ mutationFn: (d: any) => paymentsApi.create(d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['payments'] }); setModal(null); } });
@@ -71,16 +80,67 @@ export default function PaymentsPage() {
 
   const total = payments.reduce((s: number, p: any) => s + p.amount, 0);
 
+  const monthKpis = monthClients.reduce((acc: any, c: any) => {
+    acc.collected += c.selPaid || 0;
+    acc.pending += c.selRemaining ?? Math.max(0, (c.contractValue || 0) - (c.selPaid || 0));
+    return acc;
+  }, { collected: 0, pending: 0 });
+
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Collections</h1>
           <p className="text-gray-500 text-sm mt-1">Total collected: <span className="font-semibold text-emerald-600">{formatCurrency(total)}</span></p>
         </div>
-        <button onClick={() => setModal({})} className="flex items-center gap-2 bg-primary text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-primary/90">
-          <Plus className="w-4 h-4" /> Add Payment
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-white border rounded-lg px-3 py-1.5">
+            <Calendar className="w-3.5 h-3.5 text-gray-400" />
+            <select className="text-sm border-0 outline-none bg-transparent" value={selMonth} onChange={e => setSelMonth(Number(e.target.value))}>
+              {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+            </select>
+            <select className="text-sm border-0 outline-none bg-transparent" value={selYear} onChange={e => setSelYear(Number(e.target.value))}>
+              {years.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+          <button onClick={() => setModal({})} className="flex items-center gap-2 bg-primary text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-primary/90">
+            <Plus className="w-4 h-4" /> Add Payment
+          </button>
+        </div>
+      </div>
+
+      {/* Collection KPIs */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="bg-white rounded-xl border p-5 flex items-start gap-4">
+          <div className="w-11 h-11 rounded-lg flex items-center justify-center flex-shrink-0 bg-emerald-500">
+            <TrendingUp className="w-5 h-5 text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Collected</p>
+            <p className="text-xl font-bold text-gray-900 truncate">{formatCurrency(total)}</p>
+            <p className="text-xs text-gray-400 mt-0.5">Total received</p>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border p-5 flex items-start gap-4">
+          <div className="w-11 h-11 rounded-lg flex items-center justify-center flex-shrink-0 bg-blue-500">
+            <Activity className="w-5 h-5 text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">{MONTHS[selMonth - 1]}</p>
+            <p className="text-xl font-bold text-gray-900 truncate">{formatCurrency(monthKpis.collected)}</p>
+            <p className="text-xs text-gray-400 mt-0.5">Revenue this month</p>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border p-5 flex items-start gap-4">
+          <div className="w-11 h-11 rounded-lg flex items-center justify-center flex-shrink-0 bg-amber-500">
+            <AlertCircle className="w-5 h-5 text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Pending</p>
+            <p className="text-xl font-bold text-gray-900 truncate">{formatCurrency(monthKpis.pending)}</p>
+            <p className="text-xs text-gray-400 mt-0.5">To be collected ({MONTHS[selMonth - 1]})</p>
+          </div>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border overflow-hidden">

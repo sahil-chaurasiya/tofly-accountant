@@ -40,6 +40,17 @@ exports.updateLoan = async (req, res) => {
   }
 };
 
+exports.deleteLoan = async (req, res) => {
+  try {
+    const loan = await Loan.findByIdAndDelete(req.params.id);
+    if (!loan) return res.status(404).json({ message: 'Loan not found' });
+    await EMIPayment.deleteMany({ loanId: loan._id });
+    res.json({ message: 'Loan deleted' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 exports.recordEMIPayment = async (req, res) => {
   try {
     const loan = await Loan.findById(req.body.loanId);

@@ -1,10 +1,12 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { dashboardApi } from '../services/api';
 import { formatCurrency } from '../lib/utils';
 import { DashboardData } from '../types';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { TrendingUp, TrendingDown, IndianRupee, Users, CreditCard, Wallet, AlertCircle, Activity, ArrowRight } from 'lucide-react';
+import { TrendingUp, TrendingDown, IndianRupee, Users, CreditCard, Wallet, AlertCircle, Activity, ArrowRight, Calendar } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { MONTHS, getCurrentMonthYear } from '../lib/utils';
 
 const StatCard = ({ title, value, icon: Icon, color, sub, to }: any) => (
   <Link
@@ -24,9 +26,14 @@ const StatCard = ({ title, value, icon: Icon, color, sub, to }: any) => (
 );
 
 export default function DashboardPage() {
+  const now = getCurrentMonthYear();
+  const [selMonth, setSelMonth] = useState(now.month);
+  const [selYear, setSelYear] = useState(now.year);
+  const years = Array.from({ length: 4 }, (_, i) => now.year - i);
+
   const { data, isLoading } = useQuery<DashboardData>({
-    queryKey: ['dashboard'],
-    queryFn: () => dashboardApi.get().then((r) => r.data),
+    queryKey: ['dashboard', selMonth, selYear],
+    queryFn: () => dashboardApi.get({ month: selMonth, year: selYear }).then((r) => r.data),
   });
 
   if (isLoading) return (
@@ -42,9 +49,20 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-gray-500 text-sm mt-1">Financial overview at a glance</p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+          <p className="text-gray-500 text-sm mt-1">Financial overview at a glance</p>
+        </div>
+        <div className="flex items-center gap-2 bg-white border rounded-lg px-3 py-1.5">
+          <Calendar className="w-3.5 h-3.5 text-gray-400" />
+          <select className="text-sm border-0 outline-none bg-transparent" value={selMonth} onChange={e => setSelMonth(Number(e.target.value))}>
+            {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+          </select>
+          <select className="text-sm border-0 outline-none bg-transparent" value={selYear} onChange={e => setSelYear(Number(e.target.value))}>
+            {years.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
       </div>
 
       {/* Revenue Cards */}
@@ -74,7 +92,7 @@ export default function DashboardPage() {
           to="/clients"
         />
         <StatCard
-          title="This Month"
+          title={MONTHS[selMonth - 1]}
           value={formatCurrency(c?.currentMonthRevenue || 0)}
           icon={Activity}
           color="bg-blue-500"
@@ -98,7 +116,7 @@ export default function DashboardPage() {
           value={formatCurrency(c?.salaryExpense || 0)}
           icon={Wallet}
           color="bg-purple-500"
-          sub="This month"
+          sub={`${MONTHS[selMonth - 1]} ${selYear}`}
           to="/salaries"
         />
         <StatCard
@@ -106,7 +124,7 @@ export default function DashboardPage() {
           value={formatCurrency(c?.emiExpense || 0)}
           icon={CreditCard}
           color="bg-orange-500"
-          sub="This month"
+          sub={`${MONTHS[selMonth - 1]} ${selYear}`}
           to="/emi"
         />
         <StatCard
@@ -114,7 +132,7 @@ export default function DashboardPage() {
           value={formatCurrency(c?.netProfit || 0)}
           icon={TrendingUp}
           color={(c?.netProfit || 0) >= 0 ? 'bg-emerald-500' : 'bg-red-500'}
-          sub="This month"
+          sub={`${MONTHS[selMonth - 1]} ${selYear}`}
           to="/accounting"
         />
       </div>

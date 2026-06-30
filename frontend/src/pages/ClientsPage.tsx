@@ -6,10 +6,17 @@ import { formatCurrency, formatDate, getCurrentMonthYear, MONTHS } from '../lib/
 import { Link } from 'react-router-dom';
 import {
   Plus, Search, Pencil, Trash2, Eye, LayoutGrid, Table2,
-  GripVertical, X, CreditCard, ChevronDown
+  GripVertical, X, CreditCard, ChevronDown, IndianRupee, TrendingUp, AlertCircle, ArrowRight
 } from 'lucide-react';
 
-const STATUS_OPTIONS = ['All', 'Pending', 'Partial', 'Paid'];
+// Backend computes client status as 'Unpaid' | 'Partial' | 'Paid'.
+// We display 'Unpaid' as "Pending" everywhere in the UI, but filter/compare using the real value.
+const STATUS_OPTIONS = [
+  { label: 'All', value: 'All' },
+  { label: 'Pending', value: 'Unpaid' },
+  { label: 'Partial', value: 'Partial' },
+  { label: 'Paid', value: 'Paid' },
+];
 const WORK_STATUS_OPTIONS = ['', 'On Time', 'Delayed'];
 
 // ─── Client Form Modal ────────────────────────────────────────────────────────
@@ -98,7 +105,7 @@ const MonthlyPaymentModal = ({
 
 // ─── Month Status Dropdown ────────────────────────────────────────────────────
 const STATUS_CFG = {
-  Unpaid:  { dot: 'bg-red-400',     text: 'text-red-500',     bg: 'bg-red-50',     border: 'border-red-200',     label: 'Unpaid'  },
+  Unpaid:  { dot: 'bg-red-400',     text: 'text-red-500',     bg: 'bg-red-50',     border: 'border-red-200',     label: 'Pending'  },
   Partial: { dot: 'bg-amber-400',   text: 'text-amber-600',   bg: 'bg-amber-50',   border: 'border-amber-200',   label: 'Partial' },
   Paid:    { dot: 'bg-emerald-400', text: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200', label: 'Paid'    },
 };
@@ -250,6 +257,13 @@ export default function ClientsPage() {
   };
 
   const years = Array.from({ length: 4 }, (_, i) => now.year - i);
+
+  const kpis = rawClients.reduce((acc: any, c: any) => {
+    acc.totalContractValue += c.contractValue || 0;
+    acc.totalCollected += c.selPaid || 0;
+    acc.totalPending += c.selRemaining ?? Math.max(0, (c.contractValue || 0) - (c.selPaid || 0));
+    return acc;
+  }, { totalContractValue: 0, totalCollected: 0, totalPending: 0 });
 
   // ── Card View ───────────────────────────────────────────────────────────────
   const CardView = () => (
@@ -451,6 +465,40 @@ export default function ClientsPage() {
         </button>
       </div>
 
+      {/* Collection KPIs for selected month */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <Link to="/clients" className="bg-white rounded-xl border p-5 flex items-start gap-4 group hover:shadow-md hover:border-gray-300 transition-all duration-150">
+          <div className="w-11 h-11 rounded-lg flex items-center justify-center flex-shrink-0 bg-indigo-500 group-hover:scale-105 transition-transform duration-150">
+            <IndianRupee className="w-5 h-5 text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Total Revenue</p>
+            <p className="text-xl font-bold text-gray-900 truncate">{formatCurrency(kpis.totalContractValue)}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{MONTHS[selMonth - 1]} {selYear} contract value</p>
+          </div>
+        </Link>
+        <Link to="/payments" className="bg-white rounded-xl border p-5 flex items-start gap-4 group hover:shadow-md hover:border-gray-300 transition-all duration-150">
+          <div className="w-11 h-11 rounded-lg flex items-center justify-center flex-shrink-0 bg-emerald-500 group-hover:scale-105 transition-transform duration-150">
+            <TrendingUp className="w-5 h-5 text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Collected</p>
+            <p className="text-xl font-bold text-gray-900 truncate">{formatCurrency(kpis.totalCollected)}</p>
+            <p className="text-xs text-gray-400 mt-0.5">Received this month</p>
+          </div>
+        </Link>
+        <div className="bg-white rounded-xl border p-5 flex items-start gap-4">
+          <div className="w-11 h-11 rounded-lg flex items-center justify-center flex-shrink-0 bg-amber-500">
+            <AlertCircle className="w-5 h-5 text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Pending</p>
+            <p className="text-xl font-bold text-gray-900 truncate">{formatCurrency(kpis.totalPending)}</p>
+            <p className="text-xs text-gray-400 mt-0.5">To be collected</p>
+          </div>
+        </div>
+      </div>
+
       <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -467,7 +515,7 @@ export default function ClientsPage() {
         </div>
         <div className="flex gap-1.5">
           {STATUS_OPTIONS.map(s => (
-            <button key={s} onClick={() => setStatusFilter(s)} className={`px-3 py-2 rounded-lg text-sm font-medium border transition ${statusFilter === s ? 'bg-primary text-white border-primary' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>{s}</button>
+            <button key={s.value} onClick={() => setStatusFilter(s.value)} className={`px-3 py-2 rounded-lg text-sm font-medium border transition ${statusFilter === s.value ? 'bg-primary text-white border-primary' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>{s.label}</button>
           ))}
         </div>
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">

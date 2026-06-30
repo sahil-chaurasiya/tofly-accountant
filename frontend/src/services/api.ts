@@ -74,6 +74,7 @@ export const emiApi = {
   getLoan: (id: string) => api.get(`/emis/${id}`),
   createLoan: (data: any) => api.post('/emis', data),
   updateLoan: (id: string, data: any) => api.put(`/emis/${id}`, data),
+  deleteLoan: (id: string) => api.delete(`/emis/${id}`),
   recordPayment: (data: any) => api.post('/emis/payment', data),
   deletePayment: (id: string) => api.delete(`/emis/payment/${id}`),
 };
@@ -87,7 +88,7 @@ export const accountingApi = {
 
 // Dashboard
 export const dashboardApi = {
-  get: () => api.get('/dashboard'),
+  get: (params?: { month?: number; year?: number }) => api.get('/dashboard', { params }),
 };
 
 // Reports
