@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { clientsApi, paymentsApi } from '../services/api';
 import { formatCurrency, formatDate, getStatusColor, MONTHS } from '../lib/utils';
-import { ArrowLeft, Plus, Trash2, Pencil, X, CheckCircle2, AlertCircle, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Pencil, X, CheckCircle2, AlertCircle, Clock, ChevronDown, ChevronUp, PauseCircle, PlayCircle } from 'lucide-react';
 
 // ─── Monthly Payment Modal ────────────────────────────────────────────────────
 const MonthPaymentModal = ({
@@ -107,6 +107,8 @@ const StatusPill = ({ status }: { status: string }) => {
     Partial:    { cls: 'bg-amber-100 text-amber-700',    icon: <AlertCircle className="w-3 h-3" />,   label: 'Partial' },
     Unpaid:     { cls: 'bg-red-100 text-red-500',        icon: <Clock className="w-3 h-3" />,          label: 'Unpaid' },
     NotStarted: { cls: 'bg-gray-100 text-gray-400',      icon: <Clock className="w-3 h-3" />,          label: 'Not Started' },
+    Upcoming:   { cls: 'bg-blue-100 text-blue-600',      icon: <Clock className="w-3 h-3" />,          label: 'Not Due Yet' },
+    Paused:     { cls: 'bg-gray-200 text-gray-600',      icon: <PauseCircle className="w-3 h-3" />,    label: 'Paused' },
   };
   const c = cfg[status] ?? cfg['Unpaid'];
   return (
@@ -142,6 +144,14 @@ export default function ClientDetailPage() {
     mutationFn: (pid: string) => paymentsApi.delete(pid),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['client', id] }); qc.invalidateQueries({ queryKey: ['payments-month'] }); },
   });
+  const pauseClient = useMutation({
+    mutationFn: () => clientsApi.pause(id!),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['client', id] }),
+  });
+  const resumeClient = useMutation({
+    mutationFn: () => clientsApi.resume(id!),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['client', id] }),
+  });
 
   const handleSavePayment = (data: any) => {
     if (payModal?.existing) updatePayment.mutate({ pid: payModal.existing._id, data });
@@ -169,6 +179,7 @@ export default function ClientDetailPage() {
   const paidMonths   = monthLedger.filter(m => m.status === 'Paid').length;
   const partialMonths = monthLedger.filter(m => m.status === 'Partial').length;
   const unpaidMonths = monthLedger.filter(m => m.status === 'Unpaid').length;
+  const pausedMonths = monthLedger.filter(m => m.status === 'Paused').length;
   const totalMonths  = monthLedger.length;
   const totalDue     = client.totalDue ?? totalMonths * client.contractValue;
   const overallPct   = totalDue > 0 ? Math.min(100, (client.receivedAmount / totalDue) * 100) : 0;
@@ -184,8 +195,40 @@ export default function ClientDetailPage() {
           <h1 className="text-2xl font-bold text-gray-900 truncate">{client.name}</h1>
           <p className="text-sm text-gray-400">Client since {formatDate(client.startDate)}{client.notes && ` · ${client.notes}`}</p>
         </div>
+        <button
+          onClick={() => {
+            if (client.isActive === false) resumeClient.mutate();
+            else if (confirm(`Pause ${client.name}? Their monthly dues will stop accruing from today until you resume them. Everything billed so far stays exactly as it is.`)) pauseClient.mutate();
+          }}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition ${client.isActive === false ? 'border-emerald-200 text-emerald-600 hover:bg-emerald-50' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+        >
+          {client.isActive === false ? <><PlayCircle className="w-4 h-4" /> Resume</> : <><PauseCircle className="w-4 h-4" /> Pause</>}
+        </button>
         <StatusPill status={client.status} />
       </div>
+
+      {client.isActive === false && (
+        <div className="bg-gray-50 border border-gray-200 rounded-xl px-5 py-3 flex items-center gap-2 text-sm text-gray-600">
+          <PauseCircle className="w-4 h-4 flex-shrink-0" />
+          Currently paused — no new monthly dues are accruing. Resume to start billing again.
+        </div>
+      )}
+
+      {(client.pauseHistory?.length ?? 0) > 0 && (
+        <div className="bg-white rounded-xl border p-5">
+          <h3 className="font-semibold text-gray-900 mb-3">Pause History</h3>
+          <div className="space-y-2">
+            {client.pauseHistory.map((p: any, i: number) => (
+              <div key={i} className="flex items-center gap-2 text-sm text-gray-600">
+                <PauseCircle className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                <span>{formatDate(p.pausedAt)}</span>
+                <span className="text-gray-300">→</span>
+                <span>{p.resumedAt ? formatDate(p.resumedAt) : 'ongoing'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -224,6 +267,9 @@ export default function ClientDetailPage() {
           <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /><span className="text-gray-500">Paid</span><span className="font-semibold">{paidMonths}</span></div>
           <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" /><span className="text-gray-500">Partial</span><span className="font-semibold">{partialMonths}</span></div>
           <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-red-400 inline-block" /><span className="text-gray-500">Unpaid</span><span className="font-semibold">{unpaidMonths}</span></div>
+          {pausedMonths > 0 && (
+            <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-gray-400 inline-block" /><span className="text-gray-500">Paused</span><span className="font-semibold">{pausedMonths}</span></div>
+          )}
           <div className="flex items-center gap-2 ml-auto"><span className="text-gray-400">Total months:</span><span className="font-semibold">{totalMonths}</span></div>
         </div>
       </div>
@@ -289,12 +335,12 @@ export default function ClientDetailPage() {
                         setPayModal({ month: row.month, year: row.year, existing: row.payments?.[0] });
                       }}
                       className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
-                        row.status === 'Unpaid'
-                          ? 'border-primary text-primary hover:bg-primary/5'
-                          : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                        row.totalPaid > 0
+                          ? 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                          : 'border-primary text-primary hover:bg-primary/5'
                       }`}
                     >
-                      {row.status === 'Unpaid' ? '+ Record' : '✎ Edit'}
+                      {row.totalPaid > 0 ? '✎ Edit' : '+ Record'}
                     </button>
 
                     {/* Expand toggle */}

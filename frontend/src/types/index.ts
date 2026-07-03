@@ -1,3 +1,8 @@
+export interface PauseInterval {
+  pausedAt: string;
+  resumedAt: string | null;
+}
+
 export interface Client {
   _id: string;
   name: string;
@@ -7,11 +12,28 @@ export interface Client {
   accountManager: string;
   workStatus: 'On Time' | 'Delayed' | '';
   paymentStatus: 'Pending' | 'Partially Paid' | 'Paid' | '';
+  isActive: boolean;
+  pauseHistory: PauseInterval[];
   receivedAmount: number;
   pendingAmount: number;
-  status: 'Unpaid' | 'Partial' | 'Paid' | 'NotStarted';
+  totalDue: number;
+  dueDate?: string | null;
+  status: 'Unpaid' | 'Partial' | 'Paid' | 'NotStarted' | 'Upcoming' | 'Paused';
   payments?: Payment[];
+  monthLedger?: MonthLedgerEntry[];
   createdAt: string;
+}
+
+export interface MonthLedgerEntry {
+  month: number;
+  year: number;
+  contractValue: number;
+  totalPaid: number;
+  remaining: number;
+  status: 'Unpaid' | 'Partial' | 'Paid' | 'Upcoming' | 'Paused';
+  dueDate: string;
+  billable: boolean;
+  payments: Payment[];
 }
 
 export interface Payment {

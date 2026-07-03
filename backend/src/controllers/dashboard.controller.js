@@ -5,6 +5,7 @@ const Expense = require('../models/Expense');
 const EMIPayment = require('../models/EMIPayment');
 const Loan = require('../models/Loan');
 const Employee = require('../models/Employee');
+const { computeClientTotals } = require('./client.controller');
 
 exports.getDashboard = async (req, res) => {
   try {
@@ -25,7 +26,9 @@ exports.getDashboard = async (req, res) => {
       Loan.find({ status: 'Active' }),
     ]);
 
-    const totalContractValue = clients.reduce((sum, c) => sum + c.contractValue, 0);
+    // Paused clients aren't currently accruing dues, so they shouldn't count
+    // toward the "expected this month" contract value.
+    const totalContractValue = clients.filter(c => c.isActive !== false).reduce((sum, c) => sum + c.contractValue, 0);
     const totalCollected = allPayments.reduce((sum, p) => sum + p.amount, 0);
     const totalPending = totalContractValue - totalCollected;
     const currentMonthRevenue = currentMonthPayments.reduce((sum, p) => sum + p.amount, 0);
@@ -35,11 +38,12 @@ exports.getDashboard = async (req, res) => {
     const currentMonthExpenses = salaryExpense + officeExpense + emiExpense;
     const netProfit = currentMonthRevenue - currentMonthExpenses;
 
-    // Top pending clients
+    // Top pending clients — pause/due-date aware, so paused clients don't
+    // keep showing up as owing more the longer they stay paused.
     const clientStats = await Promise.all(clients.map(async (c) => {
       const payments = await Payment.find({ clientId: c._id });
-      const received = payments.reduce((sum, p) => sum + p.amount, 0);
-      return { name: c.name, pendingAmount: Math.max(0, c.contractValue - received), _id: c._id };
+      const { pendingAmount } = computeClientTotals(c, payments);
+      return { name: c.name, pendingAmount, _id: c._id };
     }));
     const topPendingClients = clientStats.filter(c => c.pendingAmount > 0).sort((a, b) => b.pendingAmount - a.pendingAmount).slice(0, 5);
 

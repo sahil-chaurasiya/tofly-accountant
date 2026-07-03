@@ -6,16 +6,19 @@ import { formatCurrency, formatDate, getCurrentMonthYear, MONTHS } from '../lib/
 import { Link } from 'react-router-dom';
 import {
   Plus, Search, Pencil, Trash2, Eye, LayoutGrid, Table2,
-  GripVertical, X, CreditCard, ChevronDown, IndianRupee, TrendingUp, AlertCircle, ArrowRight
+  GripVertical, X, CreditCard, ChevronDown, IndianRupee, TrendingUp, AlertCircle, ArrowRight,
+  Pause, Play
 } from 'lucide-react';
 
-// Backend computes client status as 'Unpaid' | 'Partial' | 'Paid'.
+// Backend computes client status as 'Unpaid' | 'Partial' | 'Paid' | 'Upcoming' | 'Paused' | 'NotStarted'.
 // We display 'Unpaid' as "Pending" everywhere in the UI, but filter/compare using the real value.
 const STATUS_OPTIONS = [
   { label: 'All', value: 'All' },
   { label: 'Pending', value: 'Unpaid' },
   { label: 'Partial', value: 'Partial' },
   { label: 'Paid', value: 'Paid' },
+  { label: 'Upcoming', value: 'Upcoming' },
+  { label: 'Paused', value: 'Paused' },
 ];
 const WORK_STATUS_OPTIONS = ['', 'On Time', 'Delayed'];
 
@@ -109,7 +112,14 @@ const STATUS_CFG = {
   Partial:    { dot: 'bg-amber-400',   text: 'text-amber-600',   bg: 'bg-amber-50',   border: 'border-amber-200',   label: 'Partial'     },
   Paid:       { dot: 'bg-emerald-400', text: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200', label: 'Paid'        },
   NotStarted: { dot: 'bg-gray-300',    text: 'text-gray-400',    bg: 'bg-gray-50',    border: 'border-gray-200',    label: 'Not Started' },
+  Upcoming:   { dot: 'bg-blue-300',    text: 'text-blue-500',    bg: 'bg-blue-50',    border: 'border-blue-200',    label: 'Not Due Yet' },
+  Paused:     { dot: 'bg-gray-400',    text: 'text-gray-500',    bg: 'bg-gray-100',   border: 'border-gray-300',    label: 'Paused'      },
 };
+
+// The only status where there's genuinely no month to record a payment
+// against is "contract hasn't started yet". "Not Due Yet" and "Paused" still
+// need to be clickable — someone can always pay early, or catch up while paused.
+const NON_EDITABLE_STATUSES = new Set(['NotStarted']);
 
 const MonthStatusDropdown = ({ status, onSelect }: { status: string; onSelect: (s: string) => void }) => {
   const [open, setOpen] = useState(false);
@@ -122,8 +132,9 @@ const MonthStatusDropdown = ({ status, onSelect }: { status: string; onSelect: (
     return () => document.removeEventListener('mousedown', h);
   }, []);
 
-  // Contract hadn't started yet in this month — nothing to record, show a plain badge.
-  if (status === 'NotStarted') {
+  // Contract hadn't started yet — no month exists to record anything against,
+  // so just show a plain badge. Every other status stays clickable.
+  if (NON_EDITABLE_STATUSES.has(status)) {
     return (
       <span className={`inline-flex items-center gap-1.5 pl-2 pr-2 py-1 rounded-md border text-xs font-medium ${cfg.bg} ${cfg.border} ${cfg.text}`}>
         <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot}`} />
@@ -241,6 +252,8 @@ export default function ClientsPage() {
   const createClient = useMutation({ mutationFn: (d: any) => clientsApi.create(d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['clients'] }); setClientModal(null); } });
   const updateClient = useMutation({ mutationFn: ({ id, data }: any) => clientsApi.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['clients'] }); setClientModal(null); } });
   const deleteClient = useMutation({ mutationFn: (id: string) => clientsApi.delete(id), onSuccess: () => qc.invalidateQueries({ queryKey: ['clients'] }) });
+  const pauseClient = useMutation({ mutationFn: (id: string) => clientsApi.pause(id), onSuccess: () => qc.invalidateQueries({ queryKey: ['clients'] }) });
+  const resumeClient = useMutation({ mutationFn: (id: string) => clientsApi.resume(id), onSuccess: () => qc.invalidateQueries({ queryKey: ['clients'] }) });
   const createPayment = useMutation({ mutationFn: (d: any) => paymentsApi.create(d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['clients'] }); setPayModal(null); } });
   const updatePayment = useMutation({ mutationFn: ({ id, d }: any) => paymentsApi.update(id, d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['clients'] }); setPayModal(null); } });
 
@@ -267,6 +280,14 @@ export default function ClientsPage() {
     updateClient.mutate({ id: client._id, data: { workStatus: newStatus } });
   };
 
+  const handleTogglePause = (client: any) => {
+    if (client.isActive === false) {
+      resumeClient.mutate(client._id);
+    } else if (confirm(`Pause ${client.name}? Their monthly dues will stop accruing from today until you resume them. Everything billed so far stays exactly as it is.`)) {
+      pauseClient.mutate(client._id);
+    }
+  };
+
   const years = Array.from({ length: 4 }, (_, i) => now.year - i);
 
   const kpis = rawClients.reduce((acc: any, c: any) => {
@@ -274,7 +295,9 @@ export default function ClientsPage() {
     const startedBySelMonth = !start || start.getFullYear() < selYear ||
       (start.getFullYear() === selYear && start.getMonth() + 1 <= selMonth);
     if (startedBySelMonth) {
-      acc.totalContractValue += c.contractValue || 0;
+      // A paused client isn't expected to pay for this month, so it shouldn't
+      // inflate the "Total Revenue" figure while paused.
+      if (c.status !== 'Paused') acc.totalContractValue += c.contractValue || 0;
       acc.totalCollected += c.selPaid || 0;
       acc.totalPending += c.selRemaining ?? Math.max(0, (c.contractValue || 0) - (c.selPaid || 0));
     }
@@ -298,13 +321,18 @@ export default function ClientsPage() {
             onDragStart={() => onDragStart(client._id)}
             onDragOver={e => onDragOver(e, client._id)}
             onDrop={onDrop}
-            className="bg-white rounded-xl border p-5 hover:shadow-md transition cursor-grab active:cursor-grabbing select-none"
+            className={`bg-white rounded-xl border p-5 hover:shadow-md transition cursor-grab active:cursor-grabbing select-none ${client.isActive === false ? 'opacity-60' : ''}`}
           >
             <div className="flex items-start justify-between mb-3">
               <div className="flex items-start gap-2">
                 <GripVertical className="w-4 h-4 text-gray-300 mt-0.5 flex-shrink-0" />
                 <div>
-                  <h3 className="font-semibold text-gray-900">{client.name}</h3>
+                  <div className="flex items-center gap-1.5">
+                    <h3 className="font-semibold text-gray-900">{client.name}</h3>
+                    {client.isActive === false && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-500 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5"><Pause className="w-2.5 h-2.5" /> Paused</span>
+                    )}
+                  </div>
                   <p className="text-xs text-gray-400 mt-0.5">Since {formatDate(client.startDate)}</p>
                   {client.accountManager && <p className="text-xs text-gray-500 mt-0.5">👤 {client.accountManager}</p>}
                 </div>
@@ -341,15 +369,17 @@ export default function ClientsPage() {
                 {mStatus === 'Partial' && <span className="text-xs text-amber-600 font-medium">⚡ {formatCurrency(paid)} / {formatCurrency(client.contractValue)}</span>}
                 {mStatus === 'Unpaid' && <span className="text-xs text-red-500 font-medium">✗ Unpaid</span>}
                 {mStatus === 'NotStarted' && <span className="text-xs text-gray-400 font-medium">Contract not started yet</span>}
+                {mStatus === 'Upcoming' && <span className="text-xs text-blue-500 font-medium">Due {client.dueDate ? formatDate(client.dueDate) : 'later this month'}</span>}
+                {mStatus === 'Paused' && <span className="text-xs text-gray-500 font-medium">⏸ Paused — not billed</span>}
               </div>
               {mStatus === 'Partial' && <p className="text-xs text-gray-400">Remaining: {formatCurrency(remaining)}</p>}
               {payment && <p className="text-xs text-gray-400 mt-0.5">Paid on {formatDate(payment.paymentDate)} · {payment.paymentMethod}</p>}
-              {mStatus !== 'NotStarted' && (
+              {!NON_EDITABLE_STATUSES.has(mStatus) && (
                 <button
                   onClick={() => setPayModal({ client, existingPayment: payment })}
                   className="mt-2 w-full text-xs border border-primary/30 text-primary rounded-lg py-1.5 hover:bg-primary/5 font-medium"
                 >
-                  {mStatus === 'Unpaid' ? '+ Record Payment' : '✎ Edit Payment'}
+                  {payment ? '✎ Edit Payment' : '+ Record Payment'}
                 </button>
               )}
             </div>
@@ -357,6 +387,11 @@ export default function ClientsPage() {
             <div className="flex gap-2">
               <Link to={`/clients/${client._id}`} className="flex-1 flex items-center justify-center gap-1 border rounded-lg py-1.5 text-xs font-medium hover:bg-gray-50"><Eye className="w-3 h-3" /> View</Link>
               <button onClick={() => setClientModal(client)} className="flex-1 flex items-center justify-center gap-1 border rounded-lg py-1.5 text-xs font-medium hover:bg-gray-50"><Pencil className="w-3 h-3" /> Edit</button>
+              <button
+                onClick={() => handleTogglePause(client)}
+                title={client.isActive === false ? 'Resume client' : 'Pause client'}
+                className={`flex items-center justify-center px-3 border rounded-lg py-1.5 text-xs ${client.isActive === false ? 'border-emerald-200 text-emerald-600 hover:bg-emerald-50' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+              >{client.isActive === false ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}</button>
               <button onClick={() => { if (confirm('Delete this client?')) deleteClient.mutate(client._id); }} className="flex items-center justify-center px-3 border border-red-200 text-red-500 rounded-lg py-1.5 text-xs hover:bg-red-50"><Trash2 className="w-3 h-3" /></button>
             </div>
           </div>
@@ -399,11 +434,16 @@ export default function ClientsPage() {
                   onDragStart={() => onDragStart(client._id)}
                   onDragOver={e => onDragOver(e, client._id)}
                   onDrop={onDrop}
-                  className="hover:bg-gray-50 cursor-grab active:cursor-grabbing"
+                  className={`hover:bg-gray-50 cursor-grab active:cursor-grabbing ${client.isActive === false ? 'opacity-60' : ''}`}
                 >
                   <td className="px-3 py-3 text-gray-300"><GripVertical className="w-4 h-4" /></td>
                   <td className="px-4 py-3">
-                    <div className="font-medium text-gray-900">{client.name}</div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="font-medium text-gray-900">{client.name}</div>
+                      {client.isActive === false && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-500 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5"><Pause className="w-2.5 h-2.5" /> Paused</span>
+                      )}
+                    </div>
                     {client.notes && <div className="text-xs text-gray-400 truncate max-w-[160px]">{client.notes}</div>}
                   </td>
                   <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(client.startDate)}</td>
@@ -419,7 +459,11 @@ export default function ClientsPage() {
                         ? <span className="text-amber-600 font-semibold">{formatCurrency(remaining)}</span>
                         : mStatus === 'NotStarted'
                           ? <span className="text-gray-300">—</span>
-                          : <span className="text-red-500 font-semibold">{formatCurrency(client.contractValue)}</span>}
+                          : mStatus === 'Upcoming'
+                            ? <span className="text-xs text-blue-500 font-medium">Due {client.dueDate ? formatDate(client.dueDate) : 'later'}</span>
+                            : mStatus === 'Paused'
+                              ? <span className="text-xs text-gray-400 font-medium">⏸ Paused</span>
+                              : <span className="text-red-500 font-semibold">{formatCurrency(client.contractValue)}</span>}
                   </td>
 
                   {/* Month Status — compact interactive dropdown */}
@@ -454,15 +498,20 @@ export default function ClientsPage() {
 
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1.5">
-                      {mStatus !== 'NotStarted' && (
+                      {!NON_EDITABLE_STATUSES.has(mStatus) && (
                         <button
                           onClick={() => setPayModal({ client, existingPayment: payment })}
-                          title={mStatus === 'Unpaid' ? 'Record Payment' : 'Edit Payment'}
+                          title={payment ? 'Edit Payment' : 'Record Payment'}
                           className="p-1.5 rounded hover:bg-primary/10 text-primary"
                         ><CreditCard className="w-3.5 h-3.5" /></button>
                       )}
                       <Link to={`/clients/${client._id}`} className="p-1.5 rounded hover:bg-gray-100 text-gray-500"><Eye className="w-3.5 h-3.5" /></Link>
                       <button onClick={() => setClientModal(client)} className="p-1.5 rounded hover:bg-gray-100 text-gray-500"><Pencil className="w-3.5 h-3.5" /></button>
+                      <button
+                        onClick={() => handleTogglePause(client)}
+                        title={client.isActive === false ? 'Resume client' : 'Pause client'}
+                        className={`p-1.5 rounded hover:bg-gray-100 ${client.isActive === false ? 'text-emerald-500' : 'text-gray-500'}`}
+                      >{client.isActive === false ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}</button>
                       <button onClick={() => { if (confirm('Delete this client?')) deleteClient.mutate(client._id); }} className="p-1.5 rounded hover:bg-red-50 text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
                     </div>
                   </td>
