@@ -59,6 +59,7 @@ export const salariesApi = {
   getMonthlySummary: (month: number, year: number) => api.get(`/salaries/summary/${month}/${year}`),
   create: (data: any) => api.post('/salaries', data),
   update: (id: string, data: any) => api.put(`/salaries/${id}`, data),
+  revert: (id: string) => api.put(`/salaries/${id}/revert`),
 };
 
 // Expenses

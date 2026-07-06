@@ -2,11 +2,16 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { employeesApi, salariesApi } from '../services/api';
 import { formatCurrency, formatDate, getCurrentMonthYear, MONTHS } from '../lib/utils';
-import { Plus, CheckCircle, Clock, Pencil, Trash2 } from 'lucide-react';
+import { Plus, CheckCircle, Clock, Pencil, Trash2, Undo2 } from 'lucide-react';
+
+const todayStr = () => new Date().toISOString().split('T')[0];
 
 const EmployeeModal = ({ initial, onSave, onClose }: any) => {
   const [form, setForm] = useState(initial || { name: '', email: '', joiningDate: '', monthlySalary: '' });
+  const [salaryEffectiveFrom, setSalaryEffectiveFrom] = useState(todayStr());
   const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }));
+  const isEditing = !!initial;
+  const salaryChanged = isEditing && Number(form.monthlySalary) !== Number(initial.monthlySalary);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
@@ -16,10 +21,17 @@ const EmployeeModal = ({ initial, onSave, onClose }: any) => {
           <div><label className="text-sm font-medium text-gray-700">Email</label><input type="email" className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" placeholder="Must match their attendance app login email" value={form.email || ''} onChange={e => set('email', e.target.value)} /></div>
           <div><label className="text-sm font-medium text-gray-700">Joining Date *</label><input type="date" className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={form.joiningDate?.split('T')[0] || ''} onChange={e => set('joiningDate', e.target.value)} /></div>
           <div><label className="text-sm font-medium text-gray-700">Monthly Salary (₹) *</label><input type="number" className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={form.monthlySalary} onChange={e => set('monthlySalary', e.target.value)} /></div>
+          {salaryChanged && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <label className="text-sm font-medium text-amber-800">Salary change effective from</label>
+              <input type="date" className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={salaryEffectiveFrom} onChange={e => setSalaryEffectiveFrom(e.target.value)} />
+              <p className="text-[11px] text-amber-700 mt-1">Past months keep the old salary — this hike only applies from the date above onward.</p>
+            </div>
+          )}
         </div>
         <div className="flex gap-3 mt-5">
           <button onClick={onClose} className="flex-1 border rounded-lg py-2 text-sm font-medium hover:bg-gray-50">Cancel</button>
-          <button onClick={() => onSave({ ...form, monthlySalary: Number(form.monthlySalary) })} className="flex-1 bg-primary text-white rounded-lg py-2 text-sm font-medium hover:bg-primary/90">Save</button>
+          <button onClick={() => onSave({ ...form, monthlySalary: Number(form.monthlySalary), ...(salaryChanged ? { salaryEffectiveFrom } : {}) })} className="flex-1 bg-primary text-white rounded-lg py-2 text-sm font-medium hover:bg-primary/90">Save</button>
         </div>
       </div>
     </div>
@@ -49,9 +61,17 @@ export default function SalariesPage() {
   const deleteEmp = useMutation({ mutationFn: (id: string) => employeesApi.delete(id), onSuccess: () => qc.invalidateQueries({ queryKey: ['employees'] }) });
   const markPaid = useMutation({
     mutationFn: ({ emp, rec }: any) => {
-      if (rec) return salariesApi.update(rec._id, { status: 'Paid', amountPaid: emp.employee.monthlySalary, paidDate: new Date() });
-      return salariesApi.create({ employeeId: emp.employee._id, month: selMonth, year: selYear, amountPaid: emp.employee.monthlySalary, paidDate: new Date(), status: 'Paid' });
+      // Use the salary that applied for this specific month (not whatever
+      // the employee's current salary happens to be), so a later hike
+      // doesn't change what an already-paid month shows as paid.
+      const amount = emp.monthlySalaryForMonth ?? emp.employee.monthlySalary;
+      if (rec) return salariesApi.update(rec._id, { status: 'Paid', amountPaid: amount, paidDate: new Date() });
+      return salariesApi.create({ employeeId: emp.employee._id, month: selMonth, year: selYear, amountPaid: amount, paidDate: new Date(), status: 'Paid' });
     },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['salary-summary'] }),
+  });
+  const revertPaid = useMutation({
+    mutationFn: (recId: string) => salariesApi.revert(recId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['salary-summary'] }),
   });
 
@@ -85,7 +105,7 @@ export default function SalariesPage() {
               {years.map(y => <option key={y} value={y}>{y}</option>)}
             </select>
           </div>
-          <p className="text-xs text-gray-400">1 paid casual leave (CL) per month · every additional leave day is deducted from salary, based on attendance app records</p>
+          <p className="text-xs text-gray-400">Absent days = same as your attendance app's own count (no full check-in + check-out, including approved leave days) · first absent day/month forgiven, every day beyond that is deducted</p>
 
           {summary && (
             <>
@@ -99,16 +119,17 @@ export default function SalariesPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b">
                     <tr>
-                      {['Employee', 'Actual Salary', 'Leaves Taken', 'Calculated Salary', 'Status', 'Amount Paid', 'Action'].map(h => <th key={h} className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">{h}</th>)}
+                      {['Employee', 'Actual Salary', 'Absent Days', 'Calculated Salary', 'Status', 'Amount Paid', 'Action'].map(h => <th key={h} className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">{h}</th>)}
                     </tr>
                   </thead>
                   <tbody className="divide-y">
                     {summary.summary?.map((row: any) => {
-                      const hasDeduction = row.attendanceSynced && row.calculatedSalary < row.employee.monthlySalary;
+                      const actualSalary = row.monthlySalaryForMonth ?? row.employee.monthlySalary;
+                      const hasDeduction = row.attendanceSynced && row.calculatedSalary < actualSalary;
                       return (
                         <tr key={row.employee._id} className="hover:bg-gray-50">
                           <td className="px-4 py-3 font-medium">{row.employee.name}</td>
-                          <td className="px-4 py-3">{formatCurrency(row.employee.monthlySalary)}</td>
+                          <td className="px-4 py-3">{formatCurrency(actualSalary)}</td>
                           <td className="px-4 py-3">
                             {row.attendanceSynced ? (
                               <span className={`font-medium ${hasDeduction ? 'text-amber-600' : 'text-gray-700'}`}>
@@ -121,7 +142,7 @@ export default function SalariesPage() {
                           <td className="px-4 py-3">
                             <span className={`font-semibold ${hasDeduction ? 'text-red-600' : 'text-gray-900'}`}>{formatCurrency(row.calculatedSalary)}</span>
                             {hasDeduction && (
-                              <p className="text-[11px] text-red-400">-{formatCurrency(row.employee.monthlySalary - row.calculatedSalary)}</p>
+                              <p className="text-[11px] text-red-400">-{formatCurrency(actualSalary - row.calculatedSalary)}</p>
                             )}
                           </td>
                           <td className="px-4 py-3">
@@ -131,8 +152,12 @@ export default function SalariesPage() {
                           </td>
                           <td className="px-4 py-3 font-medium">{row.amountPaid > 0 ? formatCurrency(row.amountPaid) : '-'}</td>
                           <td className="px-4 py-3">
-                            {row.status === 'Pending' && (
+                            {row.status === 'Pending' ? (
                               <button onClick={() => markPaid.mutate({ emp: row, rec: row.salaryRecord })} className="text-xs bg-emerald-500 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-600">Mark Paid</button>
+                            ) : (
+                              <button onClick={() => { if (confirm('Revert this back to Pending?')) revertPaid.mutate(row.salaryRecord._id); }} className="flex items-center gap-1 text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-200">
+                                <Undo2 className="w-3 h-3" /> Undo
+                              </button>
                             )}
                           </td>
                         </tr>

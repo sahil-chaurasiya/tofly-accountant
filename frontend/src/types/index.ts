@@ -59,6 +59,7 @@ export interface Employee {
   joiningDate: string;
   monthlySalary: number;
   isActive: boolean;
+  salaryHistory?: { amount: number; effectiveFrom: string }[];
 }
 
 export interface SalaryPayment {
