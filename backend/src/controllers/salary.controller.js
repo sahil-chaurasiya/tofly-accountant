@@ -2,11 +2,12 @@ const SalaryPayment = require('../models/SalaryPayment');
 const Employee = require('../models/Employee');
 const { getLeaveSummaryForMonth } = require('../utils/attendanceClient');
 
-// Absent days here follow the attendance app's own definition (see
-// attendanceClient.js): any working day without a fully-completed
-// check-in + check-out — which includes approved leave days, since those
-// have no check-in/check-out either. The first absent day per month is
-// forgiven; every day beyond that is deducted.
+// Absent days here match the attendance app's own Monthly Report / Excel
+// export "Absent" definition (see attendanceClient.js): any working day
+// (Mon–Sat, excluding declared holidays) whose attendance record isn't
+// marked `present` or `late` — which includes approved leave days, since
+// those carry status `on_leave`, not `present`/`late`. The first absent
+// day per month is forgiven; every day beyond that is deducted.
 const FORGIVEN_ABSENT_DAYS_PER_MONTH = 1;
 
 // Resolves what an employee's monthly salary actually was for a given
