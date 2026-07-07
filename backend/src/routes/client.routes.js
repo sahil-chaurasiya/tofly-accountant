@@ -1,9 +1,10 @@
 const router = require('express').Router();
-const { getClients, getClient, createClient, updateClient, deleteClient, pauseClient, resumeClient } = require('../controllers/client.controller');
+const { getClients, getClient, createClient, updateClient, deleteClient, pauseClient, resumeClient, reorderClients } = require('../controllers/client.controller');
 const { protect } = require('../middleware/auth.middleware');
 router.use(protect);
 router.get('/', getClients);
 router.post('/', createClient);
+router.put('/reorder', reorderClients);
 router.get('/:id', getClient);
 router.put('/:id', updateClient);
 router.post('/:id/pause', pauseClient);

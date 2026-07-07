@@ -16,6 +16,9 @@ const clientSchema = new mongoose.Schema({
     resumedAt: { type: Date, default: null },
     _id: false,
   }],
+  // Manual drag-and-drop position on the Clients page (lower = earlier).
+  // New clients are appended to the end (see createClient).
+  sortOrder: { type: Number, default: 0 },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Client', clientSchema);

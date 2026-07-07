@@ -32,6 +32,7 @@ export const clientsApi = {
   getOne: (id: string) => api.get(`/clients/${id}`),
   create: (data: any) => api.post('/clients', data),
   update: (id: string, data: any) => api.put(`/clients/${id}`, data),
+  reorder: (order: string[]) => api.put('/clients/reorder', { order }),
   pause: (id: string) => api.post(`/clients/${id}/pause`, {}),
   resume: (id: string) => api.post(`/clients/${id}/resume`, {}),
   delete: (id: string) => api.delete(`/clients/${id}`),

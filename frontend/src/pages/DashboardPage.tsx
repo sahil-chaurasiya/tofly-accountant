@@ -4,7 +4,7 @@ import { dashboardApi } from '../services/api';
 import { formatCurrency } from '../lib/utils';
 import { DashboardData } from '../types';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { TrendingUp, TrendingDown, IndianRupee, Users, CreditCard, Wallet, AlertCircle, Activity, ArrowRight, Calendar } from 'lucide-react';
+import { TrendingDown, CreditCard, Wallet, Activity, ArrowRight, Calendar } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { MONTHS, getCurrentMonthYear } from '../lib/utils';
 
@@ -65,32 +65,8 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Revenue Cards */}
+      {/* Monthly Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title="Total Revenue"
-          value={formatCurrency(c?.totalContractValue || 0)}
-          icon={IndianRupee}
-          color="bg-indigo-500"
-          sub="Contract value"
-          to="/clients"
-        />
-        <StatCard
-          title="Collected"
-          value={formatCurrency(c?.totalCollected || 0)}
-          icon={TrendingUp}
-          color="bg-emerald-500"
-          sub="Total received"
-          to="/payments"
-        />
-        <StatCard
-          title="Pending"
-          value={formatCurrency(c?.totalPending || 0)}
-          icon={AlertCircle}
-          color="bg-amber-500"
-          sub="To be collected"
-          to="/clients"
-        />
         <StatCard
           title={MONTHS[selMonth - 1]}
           value={formatCurrency(c?.currentMonthRevenue || 0)}
@@ -99,10 +75,6 @@ export default function DashboardPage() {
           sub="Revenue"
           to="/payments"
         />
-      </div>
-
-      {/* Expense Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Month Expenses"
           value={formatCurrency(c?.currentMonthExpenses || 0)}
@@ -126,14 +98,6 @@ export default function DashboardPage() {
           color="bg-orange-500"
           sub={`${MONTHS[selMonth - 1]} ${selYear}`}
           to="/emi"
-        />
-        <StatCard
-          title="Net Profit"
-          value={formatCurrency(c?.netProfit || 0)}
-          icon={TrendingUp}
-          color={(c?.netProfit || 0) >= 0 ? 'bg-emerald-500' : 'bg-red-500'}
-          sub={`${MONTHS[selMonth - 1]} ${selYear}`}
-          to="/accounting"
         />
       </div>
 

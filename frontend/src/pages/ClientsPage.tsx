@@ -178,7 +178,7 @@ const MonthStatusDropdown = ({ status, onSelect }: { status: string; onSelect: (
 };
 
 // ─── Draggable Hook ───────────────────────────────────────────────────────────
-function useDragOrder<T extends { _id: string }>(items: T[]) {
+function useDragOrder<T extends { _id: string }>(items: T[], onReorder?: (orderedIds: string[]) => void) {
   const [order, setOrder] = useState<string[]>([]);
   const dragId = useRef<string | null>(null);
   const dragOverId = useRef<string | null>(null);
@@ -206,18 +206,17 @@ function useDragOrder<T extends { _id: string }>(items: T[]) {
   const onDragOver = (e: React.DragEvent, id: string) => { e.preventDefault(); dragOverId.current = id; };
   const onDrop = () => {
     if (!dragId.current || !dragOverId.current || dragId.current === dragOverId.current) return;
-    setOrder(prev => {
-      const base = prev.length > 0 ? prev : orderedItems.map(i => i._id);
-      const next = [...base];
-      const fromIdx = next.indexOf(dragId.current!);
-      const toIdx = next.indexOf(dragOverId.current!);
-      if (fromIdx === -1 || toIdx === -1) return prev;
-      next.splice(fromIdx, 1);
-      next.splice(toIdx, 0, dragId.current!);
-      return next;
-    });
+    const base = order.length > 0 ? order : orderedItems.map(i => i._id);
+    const next = [...base];
+    const fromIdx = next.indexOf(dragId.current);
+    const toIdx = next.indexOf(dragOverId.current);
     dragId.current = null;
     dragOverId.current = null;
+    if (fromIdx === -1 || toIdx === -1) return;
+    next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, base[fromIdx]);
+    setOrder(next);
+    onReorder?.(next);
   };
 
   return { orderedItems, syncOrder, onDragStart, onDragOver, onDrop };
@@ -246,7 +245,19 @@ export default function ClientsPage() {
     }).then(r => r.data),
   });
 
-  const { orderedItems: clients, syncOrder, onDragStart, onDragOver, onDrop } = useDragOrder(rawClients);
+  // Persist the dropped order to the backend so it survives a refresh.
+  // The clients list itself is already returned sorted by that saved order
+  // (see backend getClients), so no extra client-side sorting is needed —
+  // this mutation is what makes the drag actually "stick".
+  const reorderClients = useMutation({
+    mutationFn: (order: string[]) => clientsApi.reorder(order),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['clients'] }),
+  });
+
+  const { orderedItems: clients, syncOrder, onDragStart, onDragOver, onDrop } = useDragOrder(
+    rawClients,
+    (orderedIds) => reorderClients.mutate(orderedIds)
+  );
   useState(() => { syncOrder(rawClients); });
 
   const createClient = useMutation({ mutationFn: (d: any) => clientsApi.create(d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['clients'] }); setClientModal(null); } });

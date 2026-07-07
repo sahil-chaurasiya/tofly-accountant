@@ -142,7 +142,7 @@ exports.getClients = async (req, res) => {
 
     let clients = await Client.find(
       search ? { name: { $regex: search, $options: 'i' } } : {}
-    ).sort({ createdAt: -1 });
+    ).sort({ sortOrder: 1, createdAt: -1 });
 
     const withStats = await Promise.all(clients.map(c => getClientWithStats(c, tMonth, tYear)));
     // A client shouldn't appear at all for months before their contract started.
@@ -173,6 +173,9 @@ exports.createClient = async (req, res) => {
     // endpoints so history entries can't get out of sync.
     delete body.isActive;
     delete body.pauseHistory;
+    // New clients go to the end of the manually-dragged order, not the top.
+    const last = await Client.findOne().sort({ sortOrder: -1 });
+    body.sortOrder = (last?.sortOrder ?? -1) + 1;
     const client = await Client.create(body);
     res.status(201).json(client);
   } catch (err) {
@@ -238,6 +241,25 @@ exports.deleteClient = async (req, res) => {
     res.json({ message: 'Client deleted' });
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+};
+
+// Persist a manually dragged order. Body: { order: [clientId, clientId, ...] }
+// in the exact order the user dropped them in. Every id in the list gets its
+// sortOrder set to its position — this is what makes drag-and-drop survive a
+// page refresh.
+exports.reorderClients = async (req, res) => {
+  try {
+    const { order } = req.body;
+    if (!Array.isArray(order) || order.length === 0) {
+      return res.status(400).json({ message: 'order must be a non-empty array of client ids' });
+    }
+    await Promise.all(
+      order.map((id, index) => Client.findByIdAndUpdate(id, { sortOrder: index }))
+    );
+    res.json({ message: 'Order saved' });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
   }
 };
 
