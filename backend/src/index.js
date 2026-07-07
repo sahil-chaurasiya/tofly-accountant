@@ -22,7 +22,11 @@ const app = express();
 connectDB();
 
 app.use(cors({
-  origin: ['https://tofly-accountant.vercel.app', 'http://localhost:5173'],
+  origin: [
+    'https://tofly-accountant.vercel.app',
+    'https://accounts.toflymediaa.com',
+    'http://localhost:5173'
+  ],
   credentials: true
 }));
 app.use(express.json());
