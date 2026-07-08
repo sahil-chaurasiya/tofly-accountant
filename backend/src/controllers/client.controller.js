@@ -23,6 +23,17 @@ const isPausedOn = (date, pauseHistory) => {
   });
 };
 
+// Is the given year/month strictly AFTER the month the client's contract
+// ended in? The end month itself still bills normally (they may have been
+// active for part of it) — only months after it are cut off entirely.
+const hasEndedByMonth = (endDate, year, month) => {
+  if (!endDate) return false;
+  const end = new Date(endDate);
+  const endYear = end.getFullYear();
+  const endMonth = end.getMonth() + 1;
+  return year > endYear || (year === endYear && month > endMonth);
+};
+
 // Build month-by-month ledger from contract start to today.
 // Each month's status is decided by, in priority order:
 //   1. Was it actually paid (fully/partially)? Money collected always counts,
@@ -33,9 +44,13 @@ const isPausedOn = (date, pauseHistory) => {
 // "billable" months (Paid/Partial/Unpaid) are the ones that count toward
 // total revenue/dues; 'Paused' and 'Upcoming' months are excluded until they
 // resolve into one of the billable states.
-const buildMonthLedger = (startDate, contractValue, payments, pauseHistory) => {
+const buildMonthLedger = (startDate, contractValue, payments, pauseHistory, endDate) => {
   const start = new Date(startDate);
   const now = new Date();
+  // A completed contract stops generating months after the one `endDate`
+  // falls in — never further than "now" either way.
+  const end = endDate ? new Date(endDate) : null;
+  const limit = (end && end < now) ? end : now;
   const payMap = {};
   payments.forEach(p => {
     const key = `${p.year}-${p.month}`;
@@ -47,7 +62,7 @@ const buildMonthLedger = (startDate, contractValue, payments, pauseHistory) => {
   let y = start.getFullYear();
   let m = start.getMonth() + 1;
 
-  while (y < now.getFullYear() || (y === now.getFullYear() && m <= now.getMonth() + 1)) {
+  while (y < limit.getFullYear() || (y === limit.getFullYear() && m <= limit.getMonth() + 1)) {
     const key = `${y}-${m}`;
     const monthPayments = payMap[key] || [];
     const totalPaid = monthPayments.reduce((s, p) => s + p.amount, 0);
@@ -74,7 +89,7 @@ const buildMonthLedger = (startDate, contractValue, payments, pauseHistory) => {
 
 // Totals used by the dashboard/detail views — pause- and due-date-aware.
 const computeClientTotals = (client, payments) => {
-  const ledger = buildMonthLedger(client.startDate, client.contractValue, payments, client.pauseHistory);
+  const ledger = buildMonthLedger(client.startDate, client.contractValue, payments, client.pauseHistory, client.endDate);
   const totalReceived = payments.reduce((s, p) => s + p.amount, 0);
   const totalDue = ledger.filter(m => m.billable).reduce((s, m) => s + m.contractValue, 0);
   return { ledger, totalReceived, totalDue, pendingAmount: Math.max(0, totalDue - totalReceived) };
@@ -97,14 +112,20 @@ const getClientWithStats = async (client, targetMonth, targetYear) => {
   const dueDate   = hasStarted ? billingDateFor(start, curYear, curMonth) : null;
   const notDueYet = hasStarted && now < dueDate;
   const paused    = hasStarted && isPausedOn(dueDate, client.pauseHistory);
+  // Has the contract's end date already passed by the selected month? (the
+  // end month itself still bills normally — only months strictly after it
+  // are cut off.)
+  const ended     = hasStarted && hasEndedByMonth(client.endDate, curYear, curMonth);
 
-  // Selected month stats — clients that hadn't started yet in the selected month
-  // have no obligation for that month, so they should not show as Pending/owing anything.
-  const selPayments = hasStarted ? payments.filter(p => p.month === curMonth && p.year === curYear) : [];
+  // Selected month stats — clients that hadn't started yet, or whose contract
+  // had already ended, in the selected month have no obligation for that
+  // month, so they should not show as Pending/owing anything.
+  const selPayments = (hasStarted && !ended) ? payments.filter(p => p.month === curMonth && p.year === curYear) : [];
   const selPaid      = selPayments.reduce((s, p) => s + p.amount, 0);
 
   let status = 'Unpaid';
   if (!hasStarted) status = 'NotStarted';
+  else if (ended) status = 'Completed';
   else if (selPaid >= client.contractValue) status = 'Paid';
   else if (selPaid > 0) status = 'Partial';
   else if (paused) status = 'Paused';
@@ -121,6 +142,7 @@ const getClientWithStats = async (client, targetMonth, targetYear) => {
     ...client.toObject(),
     // Selected-month fields (used in list/table)
     hasStarted,
+    ended,
     dueDate,
     selPaid,
     selRemaining,
@@ -145,8 +167,9 @@ exports.getClients = async (req, res) => {
     ).sort({ sortOrder: 1, createdAt: -1 });
 
     const withStats = await Promise.all(clients.map(c => getClientWithStats(c, tMonth, tYear)));
-    // A client shouldn't appear at all for months before their contract started.
-    const started   = (tMonth && tYear) ? withStats.filter(c => c.hasStarted) : withStats;
+    // A client shouldn't appear at all for months before their contract started,
+    // or for any month after their contract ended (see completeClient).
+    const started   = (tMonth && tYear) ? withStats.filter(c => c.hasStarted && !c.ended) : withStats;
     const filtered  = status ? started.filter(c => c.status === status) : started;
     res.json(filtered);
   } catch (err) {
@@ -173,6 +196,7 @@ exports.createClient = async (req, res) => {
     // endpoints so history entries can't get out of sync.
     delete body.isActive;
     delete body.pauseHistory;
+    delete body.endDate;
     // New clients go to the end of the manually-dragged order, not the top.
     const last = await Client.findOne().sort({ sortOrder: -1 });
     body.sortOrder = (last?.sortOrder ?? -1) + 1;
@@ -188,6 +212,7 @@ exports.updateClient = async (req, res) => {
     const body = { ...req.body };
     delete body.isActive;
     delete body.pauseHistory;
+    delete body.endDate;
     const client = await Client.findByIdAndUpdate(req.params.id, body, { new: true, runValidators: true });
     if (!client) return res.status(404).json({ message: 'Client not found' });
     res.json(client);
@@ -233,6 +258,47 @@ exports.resumeClient = async (req, res) => {
   }
 };
 
+// Mark a client's contract as complete/ended: from the month AFTER
+// endDate's month onward they stop being fetched and billed entirely. The
+// end month itself is left untouched — payments already recorded stay intact.
+// This is meant to be permanent; if the client comes back later, they should
+// be added as a brand-new client rather than reactivated. (reactivateClient
+// below exists only as an "undo" for a mistaken completion.)
+exports.completeClient = async (req, res) => {
+  try {
+    const client = await Client.findById(req.params.id);
+    if (!client) return res.status(404).json({ message: 'Client not found' });
+    if (client.endDate) return res.status(400).json({ message: 'Client is already marked complete' });
+
+    const endDate = req.body.endDate ? new Date(req.body.endDate) : new Date();
+    client.endDate = endDate;
+    // Close out any still-open pause so history doesn't read as "paused
+    // forever" once the contract itself has ended.
+    const openPause = [...client.pauseHistory].reverse().find(p => !p.resumedAt);
+    if (openPause) openPause.resumedAt = endDate;
+    await client.save();
+    res.json(client);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+// Undo a mistaken "mark complete" — clears endDate so the client goes back
+// to being tracked normally.
+exports.reactivateClient = async (req, res) => {
+  try {
+    const client = await Client.findById(req.params.id);
+    if (!client) return res.status(404).json({ message: 'Client not found' });
+    if (!client.endDate) return res.status(400).json({ message: 'Client is not marked complete' });
+
+    client.endDate = null;
+    await client.save();
+    res.json(client);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
 exports.deleteClient = async (req, res) => {
   try {
     const client = await Client.findByIdAndDelete(req.params.id);
@@ -267,3 +333,4 @@ exports.reorderClients = async (req, res) => {
 // without duplicating the billing-cycle logic.
 exports.computeClientTotals = computeClientTotals;
 exports.buildMonthLedger = buildMonthLedger;
+exports.hasEndedByMonth = hasEndedByMonth;

@@ -14,11 +14,14 @@ export interface Client {
   paymentStatus: 'Pending' | 'Partially Paid' | 'Paid' | '';
   isActive: boolean;
   pauseHistory: PauseInterval[];
+  // Set once a client's contract is ended — they stop being tracked/billed
+  // for any month after the one this date falls in.
+  endDate?: string | null;
   receivedAmount: number;
   pendingAmount: number;
   totalDue: number;
   dueDate?: string | null;
-  status: 'Unpaid' | 'Partial' | 'Paid' | 'NotStarted' | 'Upcoming' | 'Paused';
+  status: 'Unpaid' | 'Partial' | 'Paid' | 'NotStarted' | 'Upcoming' | 'Paused' | 'Completed';
   payments?: Payment[];
   monthLedger?: MonthLedgerEntry[];
   createdAt: string;

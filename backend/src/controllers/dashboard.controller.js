@@ -5,7 +5,7 @@ const Expense = require('../models/Expense');
 const EMIPayment = require('../models/EMIPayment');
 const Loan = require('../models/Loan');
 const Employee = require('../models/Employee');
-const { computeClientTotals } = require('./client.controller');
+const { computeClientTotals, hasEndedByMonth } = require('./client.controller');
 
 exports.getDashboard = async (req, res) => {
   try {
@@ -26,9 +26,12 @@ exports.getDashboard = async (req, res) => {
       Loan.find({ status: 'Active' }),
     ]);
 
-    // Paused clients aren't currently accruing dues, so they shouldn't count
-    // toward the "expected this month" contract value.
-    const totalContractValue = clients.filter(c => c.isActive !== false).reduce((sum, c) => sum + c.contractValue, 0);
+    // Paused clients aren't currently accruing dues, and clients whose
+    // contract ended before this month are gone entirely — neither should
+    // count toward the "expected this month" contract value.
+    const totalContractValue = clients
+      .filter(c => c.isActive !== false && !hasEndedByMonth(c.endDate, year, month))
+      .reduce((sum, c) => sum + c.contractValue, 0);
     const totalCollected = allPayments.reduce((sum, p) => sum + p.amount, 0);
     const totalPending = totalContractValue - totalCollected;
     const currentMonthRevenue = currentMonthPayments.reduce((sum, p) => sum + p.amount, 0);

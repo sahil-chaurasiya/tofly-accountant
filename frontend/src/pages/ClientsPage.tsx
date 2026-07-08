@@ -7,10 +7,10 @@ import { Link } from 'react-router-dom';
 import {
   Plus, Search, Pencil, Trash2, Eye, LayoutGrid, Table2,
   GripVertical, X, CreditCard, ChevronDown, IndianRupee, TrendingUp, AlertCircle, ArrowRight,
-  Pause, Play
+  Pause, Play, CheckCircle2, RotateCcw
 } from 'lucide-react';
 
-// Backend computes client status as 'Unpaid' | 'Partial' | 'Paid' | 'Upcoming' | 'Paused' | 'NotStarted'.
+// Backend computes client status as 'Unpaid' | 'Partial' | 'Paid' | 'Upcoming' | 'Paused' | 'NotStarted' | 'Completed'.
 // We display 'Unpaid' as "Pending" everywhere in the UI, but filter/compare using the real value.
 const STATUS_OPTIONS = [
   { label: 'All', value: 'All' },
@@ -19,6 +19,7 @@ const STATUS_OPTIONS = [
   { label: 'Paid', value: 'Paid' },
   { label: 'Upcoming', value: 'Upcoming' },
   { label: 'Paused', value: 'Paused' },
+  { label: 'Completed', value: 'Completed' },
 ];
 const WORK_STATUS_OPTIONS = ['', 'On Time', 'Delayed'];
 
@@ -40,6 +41,32 @@ const ClientForm = ({ initial, onSave, onClose }: { initial?: any; onSave: (f: a
         <div className="flex gap-3 mt-5">
           <button onClick={onClose} className="flex-1 border rounded-lg py-2 text-sm font-medium hover:bg-gray-50">Cancel</button>
           <button onClick={() => onSave(form)} className="flex-1 bg-primary text-white rounded-lg py-2 text-sm font-medium hover:bg-primary/90">Save</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Mark Complete Modal ───────────────────────────────────────────────────────
+const CompleteClientModal = ({ client, onSave, onClose }: { client: Client; onSave: (endDate: string) => void; onClose: () => void }) => {
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+        <h2 className="text-lg font-bold mb-2">Mark {client.name} as Complete</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          They'll stop being tracked and billed from the month after this date. Everything billed up to and including that month stays exactly as it is. If they come back later, add them as a new client.
+        </p>
+        <label className="text-sm font-medium text-gray-700">Contract End Date *</label>
+        <input
+          type="date"
+          className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          value={endDate}
+          onChange={e => setEndDate(e.target.value)}
+        />
+        <div className="flex gap-3 mt-5">
+          <button onClick={onClose} className="flex-1 border rounded-lg py-2 text-sm font-medium hover:bg-gray-50">Cancel</button>
+          <button onClick={() => onSave(endDate)} className="flex-1 bg-red-500 text-white rounded-lg py-2 text-sm font-medium hover:bg-red-600">Mark Complete</button>
         </div>
       </div>
     </div>
@@ -114,12 +141,14 @@ const STATUS_CFG = {
   NotStarted: { dot: 'bg-gray-300',    text: 'text-gray-400',    bg: 'bg-gray-50',    border: 'border-gray-200',    label: 'Not Started' },
   Upcoming:   { dot: 'bg-blue-300',    text: 'text-blue-500',    bg: 'bg-blue-50',    border: 'border-blue-200',    label: 'Not Due Yet' },
   Paused:     { dot: 'bg-gray-400',    text: 'text-gray-500',    bg: 'bg-gray-100',   border: 'border-gray-300',    label: 'Paused'      },
+  Completed:  { dot: 'bg-slate-400',   text: 'text-slate-500',   bg: 'bg-slate-100',  border: 'border-slate-300',   label: 'Completed'   },
 };
 
-// The only status where there's genuinely no month to record a payment
-// against is "contract hasn't started yet". "Not Due Yet" and "Paused" still
-// need to be clickable — someone can always pay early, or catch up while paused.
-const NON_EDITABLE_STATUSES = new Set(['NotStarted']);
+// The statuses where there's genuinely no month to record a payment against:
+// "contract hasn't started yet" and "contract has ended" (nothing owed for
+// either). "Not Due Yet" and "Paused" still need to be clickable — someone
+// can always pay early, or catch up while paused.
+const NON_EDITABLE_STATUSES = new Set(['NotStarted', 'Completed']);
 
 const MonthStatusDropdown = ({ status, onSelect }: { status: string; onSelect: (s: string) => void }) => {
   const [open, setOpen] = useState(false);
@@ -234,6 +263,7 @@ export default function ClientsPage() {
   const [view, setView] = useState<'grid' | 'table'>('table');
   const [clientModal, setClientModal] = useState<null | 'add' | Client>(null);
   const [payModal, setPayModal] = useState<null | { client: Client; existingPayment: Payment | null }>(null);
+  const [completeModal, setCompleteModal] = useState<null | Client>(null);
 
   const { data: rawClients = [], isLoading } = useQuery<Client[]>({
     queryKey: ['clients', search, statusFilter, selMonth, selYear],
@@ -265,6 +295,8 @@ export default function ClientsPage() {
   const deleteClient = useMutation({ mutationFn: (id: string) => clientsApi.delete(id), onSuccess: () => qc.invalidateQueries({ queryKey: ['clients'] }) });
   const pauseClient = useMutation({ mutationFn: (id: string) => clientsApi.pause(id), onSuccess: () => qc.invalidateQueries({ queryKey: ['clients'] }) });
   const resumeClient = useMutation({ mutationFn: (id: string) => clientsApi.resume(id), onSuccess: () => qc.invalidateQueries({ queryKey: ['clients'] }) });
+  const completeClient = useMutation({ mutationFn: ({ id, endDate }: { id: string; endDate: string }) => clientsApi.complete(id, endDate), onSuccess: () => { qc.invalidateQueries({ queryKey: ['clients'] }); setCompleteModal(null); } });
+  const reactivateClient = useMutation({ mutationFn: (id: string) => clientsApi.reactivate(id), onSuccess: () => qc.invalidateQueries({ queryKey: ['clients'] }) });
   const createPayment = useMutation({ mutationFn: (d: any) => paymentsApi.create(d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['clients'] }); setPayModal(null); } });
   const updatePayment = useMutation({ mutationFn: ({ id, d }: any) => paymentsApi.update(id, d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['clients'] }); setPayModal(null); } });
 
@@ -296,6 +328,16 @@ export default function ClientsPage() {
       resumeClient.mutate(client._id);
     } else if (confirm(`Pause ${client.name}? Their monthly dues will stop accruing from today until you resume them. Everything billed so far stays exactly as it is.`)) {
       pauseClient.mutate(client._id);
+    }
+  };
+
+  const handleSaveComplete = (endDate: string) => {
+    if (completeModal) completeClient.mutate({ id: completeModal._id, endDate });
+  };
+
+  const handleReactivate = (client: any) => {
+    if (confirm(`Reactivate ${client.name}? They'll go back to being tracked and billed normally.`)) {
+      reactivateClient.mutate(client._id);
     }
   };
 
@@ -332,7 +374,7 @@ export default function ClientsPage() {
             onDragStart={() => onDragStart(client._id)}
             onDragOver={e => onDragOver(e, client._id)}
             onDrop={onDrop}
-            className={`bg-white rounded-xl border p-5 hover:shadow-md transition cursor-grab active:cursor-grabbing select-none ${client.isActive === false ? 'opacity-60' : ''}`}
+            className={`bg-white rounded-xl border p-5 hover:shadow-md transition cursor-grab active:cursor-grabbing select-none ${client.isActive === false || client.endDate ? 'opacity-60' : ''}`}
           >
             <div className="flex items-start justify-between mb-3">
               <div className="flex items-start gap-2">
@@ -340,7 +382,9 @@ export default function ClientsPage() {
                 <div>
                   <div className="flex items-center gap-1.5">
                     <h3 className="font-semibold text-gray-900">{client.name}</h3>
-                    {client.isActive === false && (
+                    {client.endDate ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5"><CheckCircle2 className="w-2.5 h-2.5" /> Completed</span>
+                    ) : client.isActive === false && (
                       <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-500 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5"><Pause className="w-2.5 h-2.5" /> Paused</span>
                     )}
                   </div>
@@ -398,11 +442,26 @@ export default function ClientsPage() {
             <div className="flex gap-2">
               <Link to={`/clients/${client._id}`} className="flex-1 flex items-center justify-center gap-1 border rounded-lg py-1.5 text-xs font-medium hover:bg-gray-50"><Eye className="w-3 h-3" /> View</Link>
               <button onClick={() => setClientModal(client)} className="flex-1 flex items-center justify-center gap-1 border rounded-lg py-1.5 text-xs font-medium hover:bg-gray-50"><Pencil className="w-3 h-3" /> Edit</button>
-              <button
-                onClick={() => handleTogglePause(client)}
-                title={client.isActive === false ? 'Resume client' : 'Pause client'}
-                className={`flex items-center justify-center px-3 border rounded-lg py-1.5 text-xs ${client.isActive === false ? 'border-emerald-200 text-emerald-600 hover:bg-emerald-50' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
-              >{client.isActive === false ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}</button>
+              {client.endDate ? (
+                <button
+                  onClick={() => handleReactivate(client)}
+                  title="Reactivate client"
+                  className="flex items-center justify-center px-3 border border-emerald-200 text-emerald-600 rounded-lg py-1.5 text-xs hover:bg-emerald-50"
+                ><RotateCcw className="w-3 h-3" /></button>
+              ) : (
+                <>
+                  <button
+                    onClick={() => handleTogglePause(client)}
+                    title={client.isActive === false ? 'Resume client' : 'Pause client'}
+                    className={`flex items-center justify-center px-3 border rounded-lg py-1.5 text-xs ${client.isActive === false ? 'border-emerald-200 text-emerald-600 hover:bg-emerald-50' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                  >{client.isActive === false ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}</button>
+                  <button
+                    onClick={() => setCompleteModal(client)}
+                    title="Mark contract complete"
+                    className="flex items-center justify-center px-3 border border-slate-200 text-slate-500 rounded-lg py-1.5 text-xs hover:bg-slate-50"
+                  ><CheckCircle2 className="w-3 h-3" /></button>
+                </>
+              )}
               <button onClick={() => { if (confirm('Delete this client?')) deleteClient.mutate(client._id); }} className="flex items-center justify-center px-3 border border-red-200 text-red-500 rounded-lg py-1.5 text-xs hover:bg-red-50"><Trash2 className="w-3 h-3" /></button>
             </div>
           </div>
@@ -445,13 +504,15 @@ export default function ClientsPage() {
                   onDragStart={() => onDragStart(client._id)}
                   onDragOver={e => onDragOver(e, client._id)}
                   onDrop={onDrop}
-                  className={`hover:bg-gray-50 cursor-grab active:cursor-grabbing ${client.isActive === false ? 'opacity-60' : ''}`}
+                  className={`hover:bg-gray-50 cursor-grab active:cursor-grabbing ${client.isActive === false || client.endDate ? 'opacity-60' : ''}`}
                 >
                   <td className="px-3 py-3 text-gray-300"><GripVertical className="w-4 h-4" /></td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1.5">
                       <div className="font-medium text-gray-900">{client.name}</div>
-                      {client.isActive === false && (
+                      {client.endDate ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5"><CheckCircle2 className="w-2.5 h-2.5" /> Completed</span>
+                      ) : client.isActive === false && (
                         <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-500 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5"><Pause className="w-2.5 h-2.5" /> Paused</span>
                       )}
                     </div>
@@ -474,7 +535,9 @@ export default function ClientsPage() {
                             ? <span className="text-xs text-blue-500 font-medium">Due {client.dueDate ? formatDate(client.dueDate) : 'later'}</span>
                             : mStatus === 'Paused'
                               ? <span className="text-xs text-gray-400 font-medium">⏸ Paused</span>
-                              : <span className="text-red-500 font-semibold">{formatCurrency(client.contractValue)}</span>}
+                              : mStatus === 'Completed'
+                                ? <span className="text-xs text-slate-400 font-medium">✓ Completed</span>
+                                : <span className="text-red-500 font-semibold">{formatCurrency(client.contractValue)}</span>}
                   </td>
 
                   {/* Month Status — compact interactive dropdown */}
@@ -518,11 +581,26 @@ export default function ClientsPage() {
                       )}
                       <Link to={`/clients/${client._id}`} className="p-1.5 rounded hover:bg-gray-100 text-gray-500"><Eye className="w-3.5 h-3.5" /></Link>
                       <button onClick={() => setClientModal(client)} className="p-1.5 rounded hover:bg-gray-100 text-gray-500"><Pencil className="w-3.5 h-3.5" /></button>
-                      <button
-                        onClick={() => handleTogglePause(client)}
-                        title={client.isActive === false ? 'Resume client' : 'Pause client'}
-                        className={`p-1.5 rounded hover:bg-gray-100 ${client.isActive === false ? 'text-emerald-500' : 'text-gray-500'}`}
-                      >{client.isActive === false ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}</button>
+                      {client.endDate ? (
+                        <button
+                          onClick={() => handleReactivate(client)}
+                          title="Reactivate client"
+                          className="p-1.5 rounded hover:bg-emerald-50 text-emerald-500"
+                        ><RotateCcw className="w-3.5 h-3.5" /></button>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => handleTogglePause(client)}
+                            title={client.isActive === false ? 'Resume client' : 'Pause client'}
+                            className={`p-1.5 rounded hover:bg-gray-100 ${client.isActive === false ? 'text-emerald-500' : 'text-gray-500'}`}
+                          >{client.isActive === false ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}</button>
+                          <button
+                            onClick={() => setCompleteModal(client)}
+                            title="Mark contract complete"
+                            className="p-1.5 rounded hover:bg-slate-100 text-slate-500"
+                          ><CheckCircle2 className="w-3.5 h-3.5" /></button>
+                        </>
+                      )}
                       <button onClick={() => { if (confirm('Delete this client?')) deleteClient.mutate(client._id); }} className="p-1.5 rounded hover:bg-red-50 text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
                     </div>
                   </td>
@@ -624,6 +702,13 @@ export default function ClientsPage() {
           initial={typeof clientModal === 'object' ? clientModal : undefined}
           onSave={handleSaveClient}
           onClose={() => setClientModal(null)}
+        />
+      )}
+      {completeModal && (
+        <CompleteClientModal
+          client={completeModal}
+          onSave={handleSaveComplete}
+          onClose={() => setCompleteModal(null)}
         />
       )}
       {payModal && (

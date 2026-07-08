@@ -35,6 +35,8 @@ export const clientsApi = {
   reorder: (order: string[]) => api.put('/clients/reorder', { order }),
   pause: (id: string) => api.post(`/clients/${id}/pause`, {}),
   resume: (id: string) => api.post(`/clients/${id}/resume`, {}),
+  complete: (id: string, endDate?: string) => api.post(`/clients/${id}/complete`, endDate ? { endDate } : {}),
+  reactivate: (id: string) => api.post(`/clients/${id}/reactivate`, {}),
   delete: (id: string) => api.delete(`/clients/${id}`),
 };
 

@@ -16,6 +16,11 @@ const clientSchema = new mongoose.Schema({
     resumedAt: { type: Date, default: null },
     _id: false,
   }],
+  // Contract-completion support — a completed client stops being billed and
+  // stops showing up in any month AFTER the month `endDate` falls in. Unlike
+  // pause, this is meant to be permanent: if the client comes back, they're
+  // re-added as a brand new client rather than reactivated.
+  endDate: { type: Date, default: null },
   // Manual drag-and-drop position on the Clients page (lower = earlier).
   // New clients are appended to the end (see createClient).
   sortOrder: { type: Number, default: 0 },

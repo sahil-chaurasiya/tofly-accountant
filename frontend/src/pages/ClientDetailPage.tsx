@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { clientsApi, paymentsApi } from '../services/api';
 import { formatCurrency, formatDate, getStatusColor, MONTHS } from '../lib/utils';
-import { ArrowLeft, Plus, Trash2, Pencil, X, CheckCircle2, AlertCircle, Clock, ChevronDown, ChevronUp, PauseCircle, PlayCircle } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Pencil, X, CheckCircle2, AlertCircle, Clock, ChevronDown, ChevronUp, PauseCircle, PlayCircle, RotateCcw } from 'lucide-react';
 
 // ─── Monthly Payment Modal ────────────────────────────────────────────────────
 const MonthPaymentModal = ({
@@ -100,6 +100,32 @@ const MonthPaymentModal = ({
   );
 };
 
+// ─── Mark Complete Modal ───────────────────────────────────────────────────────
+const CompleteClientModal = ({ name, onSave, onClose }: { name: string; onSave: (endDate: string) => void; onClose: () => void }) => {
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+        <h2 className="text-lg font-bold mb-2">Mark {name} as Complete</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          They'll stop being tracked and billed from the month after this date. Everything billed up to and including that month stays exactly as it is. If they come back later, add them as a new client.
+        </p>
+        <label className="text-sm font-medium text-gray-700">Contract End Date *</label>
+        <input
+          type="date"
+          className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          value={endDate}
+          onChange={e => setEndDate(e.target.value)}
+        />
+        <div className="flex gap-3 mt-5">
+          <button onClick={onClose} className="flex-1 border rounded-lg py-2 text-sm font-medium hover:bg-gray-50">Cancel</button>
+          <button onClick={() => onSave(endDate)} className="flex-1 bg-red-500 text-white rounded-lg py-2 text-sm font-medium hover:bg-red-600">Mark Complete</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── Status pill ──────────────────────────────────────────────────────────────
 const StatusPill = ({ status }: { status: string }) => {
   const cfg: Record<string, { cls: string; icon: React.ReactNode; label: string }> = {
@@ -109,6 +135,7 @@ const StatusPill = ({ status }: { status: string }) => {
     NotStarted: { cls: 'bg-gray-100 text-gray-400',      icon: <Clock className="w-3 h-3" />,          label: 'Not Started' },
     Upcoming:   { cls: 'bg-blue-100 text-blue-600',      icon: <Clock className="w-3 h-3" />,          label: 'Not Due Yet' },
     Paused:     { cls: 'bg-gray-200 text-gray-600',      icon: <PauseCircle className="w-3 h-3" />,    label: 'Paused' },
+    Completed:  { cls: 'bg-slate-200 text-slate-600',    icon: <CheckCircle2 className="w-3 h-3" />,   label: 'Completed' },
   };
   const c = cfg[status] ?? cfg['Unpaid'];
   return (
@@ -126,6 +153,7 @@ export default function ClientDetailPage() {
     month: number; year: number; existing?: any;
   } | null>(null);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
+  const [completeModal, setCompleteModal] = useState(false);
 
   const { data: client, isLoading } = useQuery({
     queryKey: ['client', id],
@@ -150,6 +178,14 @@ export default function ClientDetailPage() {
   });
   const resumeClient = useMutation({
     mutationFn: () => clientsApi.resume(id!),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['client', id] }),
+  });
+  const completeClient = useMutation({
+    mutationFn: (endDate: string) => clientsApi.complete(id!, endDate),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['client', id] }); setCompleteModal(false); },
+  });
+  const reactivateClient = useMutation({
+    mutationFn: () => clientsApi.reactivate(id!),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['client', id] }),
   });
 
@@ -195,19 +231,43 @@ export default function ClientDetailPage() {
           <h1 className="text-2xl font-bold text-gray-900 truncate">{client.name}</h1>
           <p className="text-sm text-gray-400">Client since {formatDate(client.startDate)}{client.notes && ` · ${client.notes}`}</p>
         </div>
-        <button
-          onClick={() => {
-            if (client.isActive === false) resumeClient.mutate();
-            else if (confirm(`Pause ${client.name}? Their monthly dues will stop accruing from today until you resume them. Everything billed so far stays exactly as it is.`)) pauseClient.mutate();
-          }}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition ${client.isActive === false ? 'border-emerald-200 text-emerald-600 hover:bg-emerald-50' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-        >
-          {client.isActive === false ? <><PlayCircle className="w-4 h-4" /> Resume</> : <><PauseCircle className="w-4 h-4" /> Pause</>}
-        </button>
+        {client.endDate ? (
+          <button
+            onClick={() => { if (confirm(`Reactivate ${client.name}? They'll go back to being tracked and billed normally.`)) reactivateClient.mutate(); }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition border-emerald-200 text-emerald-600 hover:bg-emerald-50"
+          >
+            <RotateCcw className="w-4 h-4" /> Reactivate
+          </button>
+        ) : (
+          <>
+            <button
+              onClick={() => {
+                if (client.isActive === false) resumeClient.mutate();
+                else if (confirm(`Pause ${client.name}? Their monthly dues will stop accruing from today until you resume them. Everything billed so far stays exactly as it is.`)) pauseClient.mutate();
+              }}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition ${client.isActive === false ? 'border-emerald-200 text-emerald-600 hover:bg-emerald-50' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+            >
+              {client.isActive === false ? <><PlayCircle className="w-4 h-4" /> Resume</> : <><PauseCircle className="w-4 h-4" /> Pause</>}
+            </button>
+            <button
+              onClick={() => setCompleteModal(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition border-slate-200 text-slate-600 hover:bg-slate-50"
+            >
+              <CheckCircle2 className="w-4 h-4" /> Mark Complete
+            </button>
+          </>
+        )}
         <StatusPill status={client.status} />
       </div>
 
-      {client.isActive === false && (
+      {client.endDate && (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl px-5 py-3 flex items-center gap-2 text-sm text-slate-600">
+          <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+          Contract completed on {formatDate(client.endDate)} — no longer tracked or billed from the following month onward. If they come back, add them as a new client.
+        </div>
+      )}
+
+      {!client.endDate && client.isActive === false && (
         <div className="bg-gray-50 border border-gray-200 rounded-xl px-5 py-3 flex items-center gap-2 text-sm text-gray-600">
           <PauseCircle className="w-4 h-4 flex-shrink-0" />
           Currently paused — no new monthly dues are accruing. Resume to start billing again.
@@ -414,6 +474,13 @@ export default function ClientDetailPage() {
           existing={payModal.existing}
           onSave={handleSavePayment}
           onClose={() => setPayModal(null)}
+        />
+      )}
+      {completeModal && (
+        <CompleteClientModal
+          name={client.name}
+          onSave={(endDate) => completeClient.mutate(endDate)}
+          onClose={() => setCompleteModal(false)}
         />
       )}
     </div>
