@@ -182,6 +182,22 @@ export default function InvoicePage() {
       const FOOTER_RATIO = 195 / 787;
       const FOOTER_H = Math.round(W * FOOTER_RATIO * 100) / 100; // ≈ 52mm
 
+      // Draws the footer banner on whichever page is currently active — called
+      // whenever a page is finished (either because content overflowed onto a
+      // new page, or because we've reached the end of the invoice).
+      const drawFooter = () => {
+        try {
+          doc.addImage(FOOTER_BANNER_BASE64, 'JPEG', 0, H - FOOTER_H, W, FOOTER_H);
+        } catch (e) {
+          // fall back to a plain dark bar if the banner image fails to load
+          doc.setFillColor(...BLACK);
+          doc.rect(0, H - 10, W, 10, 'F');
+          doc.setFontSize(7);
+          doc.setTextColor(...GOLD);
+          doc.text(`${company.companyName} — Generated via Tofly Accountant`, margin, H - 4);
+        }
+      };
+
       // ── Header bar ──────────────────────────────────────────────────
       doc.setFillColor(...BLACK);
       doc.rect(0, 0, W, 42, 'F');
@@ -284,9 +300,56 @@ export default function InvoicePage() {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
 
+      const descLineH = 3.6;
+      const descMaxWidth = (W - margin) - (margin + 2); // full width available for wrapped description text
+      // redraws the column header — used when a table continues onto a new page
+      const drawTableHeader = (y: number) => {
+        doc.setFillColor(...GOLD_LIGHT);
+        doc.rect(margin, y, W - margin * 2, 9, 'F');
+        doc.setDrawColor(...GOLD);
+        doc.setLineWidth(0.5);
+        doc.line(margin, y + 9, W - margin, y + 9);
+        doc.setLineWidth(0.2);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor(...INK);
+        doc.text('Item', margin + 2, y + 6);
+        doc.text('Qty', W - margin - 60, y + 6, { align: 'right' });
+        doc.text('Price', W - margin - 28, y + 6, { align: 'right' });
+        doc.text('Amount', W - margin, y + 6, { align: 'right' });
+      };
+
       lineItems.forEach((li, idx) => {
+        // Break the description into bullet points (one per line the user entered),
+        // then wrap each bullet to the available width so nothing gets cut off.
+        const descBullets = (li.service.description || '')
+          .split(/\r?\n/)
+          .map(line => line.replace(/^[-•]\s*/, '').trim())
+          .filter(Boolean);
+
+        const wrappedDescLines: string[] = [];
+        descBullets.forEach(bullet => {
+          const wrapped = doc.splitTextToSize(`•  ${bullet}`, descMaxWidth);
+          wrappedDescLines.push(...wrapped);
+        });
+
+        const rowH = wrappedDescLines.length > 0
+          ? 9 + wrappedDescLines.length * descLineH
+          : 9;
+
+        // If this row would run past the space reserved for totals/payment/footer,
+        // continue the table on a fresh page rather than truncating content.
+        const bottomLimit = H - FOOTER_H - 55;
+        if (rowY + rowH > bottomLimit) {
+          doc.addPage();
+          rowY = margin;
+          drawTableHeader(rowY);
+          rowY += 9;
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(9);
+        }
+
         const isEven = idx % 2 === 1;
-        const rowH = li.service.description ? 14 : 9;
         if (isEven) {
           doc.setFillColor(250, 248, 240);
           doc.rect(margin, rowY, W - margin * 2, rowH, 'F');
@@ -295,12 +358,13 @@ export default function InvoicePage() {
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(9);
         doc.text(li.service.name, margin + 2, rowY + 6);
-        if (li.service.description) {
+        if (wrappedDescLines.length > 0) {
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(7.5);
           doc.setTextColor(100, 100, 100);
-          const desc = li.service.description.length > 90 ? li.service.description.substring(0, 90) + '...' : li.service.description;
-          doc.text(desc, margin + 2, rowY + 11);
+          wrappedDescLines.forEach((line, i) => {
+            doc.text(line, margin + 2, rowY + 11 + i * descLineH);
+          });
         }
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(9);
@@ -316,6 +380,12 @@ export default function InvoicePage() {
       rowY += 6;
 
       // ── Totals ────────────────────────────────────────────────────────
+      const totalsBlockH = 7 + (pendingAmount > 0 ? 7 : 0) + 4 + 16 + 24; // subtotal → amount-due box
+      if (rowY + totalsBlockH > H - 10) {
+        doc.addPage();
+        rowY = margin;
+      }
+
       const totX = W - margin - 50;
       doc.setFontSize(9);
       doc.setTextColor(...SLATE);
@@ -363,21 +433,36 @@ export default function InvoicePage() {
 
       // ── Notes ─────────────────────────────────────────────────────────
       if (notes.trim()) {
+        const noteLines = doc.splitTextToSize(notes, W - margin * 2);
+        const noteBlockH = 10 + noteLines.length * 4;
+        if (rowY + noteBlockH > H - 10) {
+          doc.addPage();
+          rowY = margin;
+        }
         doc.setTextColor(...SLATE);
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(8);
         doc.text('Notes', margin, rowY);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(60, 60, 60);
-        const noteLines = doc.splitTextToSize(notes, W - margin * 2);
         doc.text(noteLines, margin, rowY + 5);
         rowY += 10 + noteLines.length * 4;
       }
 
       // ── Payment Instructions ───────────────────────────────────────────
-      // anchor so the block sits just above the footer banner, never overlapping it
+      // This is always the last section before the footer, so it's the one place
+      // that needs to reserve room for the footer banner. Anchor it to sit just
+      // above the footer for a full-page look — but only when it fits on the
+      // current page without a break; if it had to jump to a fresh page, let it
+      // sit naturally right below whatever came before instead of leaving a big
+      // empty gap.
       const paymentBlockH = 34;
-      rowY = Math.max(rowY, H - FOOTER_H - paymentBlockH);
+      if (rowY + paymentBlockH > H - FOOTER_H) {
+        doc.addPage();
+        rowY = margin;
+      } else {
+        rowY = Math.max(rowY, H - FOOTER_H - paymentBlockH);
+      }
       doc.setDrawColor(...HAIRLINE);
       doc.line(margin, rowY, W - margin, rowY);
       rowY += 7;
@@ -402,16 +487,7 @@ export default function InvoicePage() {
       payLines.forEach(line => { doc.text(line, margin, rowY); rowY += 4.5; });
 
       // ── Footer — full-bleed brand banner strip ───────────────────────
-      try {
-        doc.addImage(FOOTER_BANNER_BASE64, 'JPEG', 0, H - FOOTER_H, W, FOOTER_H);
-      } catch (e) {
-        // fall back to a plain dark bar if the banner image fails to load
-        doc.setFillColor(...BLACK);
-        doc.rect(0, H - 10, W, 10, 'F');
-        doc.setFontSize(7);
-        doc.setTextColor(...GOLD);
-        doc.text(`${company.companyName} — Generated via Tofly Accountant`, margin, H - 4);
-      }
+      drawFooter();
 
       doc.save(`Invoice-${invoiceNumber}.pdf`);
     } finally {
@@ -657,7 +733,15 @@ export default function InvoicePage() {
                 <tr key={li.service._id} className="border-b last:border-0">
                   <td className="py-3">
                     <p className="font-medium text-gray-900">{li.service.name}</p>
-                    {li.service.description && <p className="text-xs text-gray-400">{li.service.description}</p>}
+                    {li.service.description && (
+                      <ul className="text-xs text-gray-400 list-disc list-inside mt-0.5 space-y-0.5">
+                        {li.service.description
+                          .split(/\r?\n/)
+                          .map(line => line.replace(/^[-•]\s*/, '').trim())
+                          .filter(Boolean)
+                          .map((line, i) => <li key={i}>{line}</li>)}
+                      </ul>
+                    )}
                   </td>
                   <td className="py-3">
                     <div className="flex items-center justify-center gap-2">
