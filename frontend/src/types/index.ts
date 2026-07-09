@@ -3,6 +3,12 @@ export interface PauseInterval {
   resumedAt: string | null;
 }
 
+export interface ContractValueOverride {
+  year: number;
+  month: number;
+  value: number;
+}
+
 export interface Client {
   _id: string;
   name: string;
@@ -17,6 +23,13 @@ export interface Client {
   // Set once a client's contract is ended — they stop being tracked/billed
   // for any month after the one this date falls in.
   endDate?: string | null;
+  // One-off monthly contract value overrides — only the listed (year, month)
+  // is affected.
+  contractValueOverrides?: ContractValueOverride[];
+  // The amount actually owed for the currently-selected month (accounts for
+  // any override for that month). Use this instead of `contractValue` for
+  // anything tied to a specific month.
+  monthContractValue?: number;
   receivedAmount: number;
   pendingAmount: number;
   totalDue: number;

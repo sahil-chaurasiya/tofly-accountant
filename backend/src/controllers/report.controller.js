@@ -3,6 +3,7 @@ const Expense = require('../models/Expense');
 const SalaryPayment = require('../models/SalaryPayment');
 const EMIPayment = require('../models/EMIPayment');
 const Client = require('../models/Client');
+const { contractValueFor } = require('./client.controller');
 
 exports.getReport = async (req, res) => {
   try {
@@ -32,10 +33,17 @@ exports.getReport = async (req, res) => {
       data = { income, expenseTotal, salaryTotal, emiTotal, totalExpenses: expenseTotal + salaryTotal + emiTotal, profit: income - expenseTotal - salaryTotal - emiTotal };
     } else if (type === 'collection') {
       const clients = await Client.find();
+      // If the report range is exactly one calendar month, use that month's
+      // effective contract value (respecting any one-off override); for
+      // multi-month ranges the default value is kept, same as before.
+      const isSingleMonth = start.getFullYear() === end.getFullYear() && start.getMonth() === end.getMonth();
       const collection = await Promise.all(clients.map(async (c) => {
         const payments = await Payment.find({ clientId: c._id, paymentDate: { $gte: start, $lte: end } });
         const collected = payments.reduce((s, p) => s + p.amount, 0);
-        return { clientName: c.name, contractValue: c.contractValue, collected, payments };
+        const contractValue = isSingleMonth
+          ? contractValueFor(c.contractValue, c.contractValueOverrides, start.getFullYear(), start.getMonth() + 1)
+          : c.contractValue;
+        return { clientName: c.name, contractValue, collected, payments };
       }));
       data = { collection };
     }

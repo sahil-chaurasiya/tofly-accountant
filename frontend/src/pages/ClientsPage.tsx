@@ -73,6 +73,43 @@ const CompleteClientModal = ({ client, onSave, onClose }: { client: Client; onSa
   );
 };
 
+// ─── Month Contract Value Modal ────────────────────────────────────────────────
+const MonthValueModal = ({
+  client, month, year, onSave, onReset, onClose,
+}: {
+  client: Client; month: number; year: number;
+  onSave: (value: number) => void; onReset: () => void; onClose: () => void;
+}) => {
+  const current = (client as any).monthContractValue ?? client.contractValue;
+  const isOverridden = current !== client.contractValue;
+  const [value, setValue] = useState(String(current));
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+        <h2 className="text-lg font-bold mb-1">{client.name} — {MONTHS[month - 1]} {year}</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Change the contract value for just this one month. Every other month keeps using the normal {formatCurrency(client.contractValue)}.
+        </p>
+        <label className="text-sm font-medium text-gray-700">Contract Value for {MONTHS[month - 1]} (₹) *</label>
+        <input
+          type="number"
+          className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          value={value}
+          onChange={e => setValue(e.target.value)}
+        />
+        {isOverridden && <p className="text-xs text-gray-400 mt-1">Normal monthly value: {formatCurrency(client.contractValue)}</p>}
+        <div className="flex gap-3 mt-5">
+          <button onClick={onClose} className="flex-1 border rounded-lg py-2 text-sm font-medium hover:bg-gray-50">Cancel</button>
+          {isOverridden && (
+            <button onClick={onReset} className="flex-1 border border-amber-200 text-amber-600 rounded-lg py-2 text-sm font-medium hover:bg-amber-50">Reset to Default</button>
+          )}
+          <button onClick={() => onSave(Number(value))} className="flex-1 bg-primary text-white rounded-lg py-2 text-sm font-medium hover:bg-primary/90">Save</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── Monthly Payment Modal ────────────────────────────────────────────────────
 const MonthlyPaymentModal = ({
   client, month, year, existingPayment, onSave, onClose
@@ -90,6 +127,9 @@ const MonthlyPaymentModal = ({
     remarks: existingPayment?.remarks ?? '',
   });
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
+  // Use this month's actual owed amount (respects any one-off override for
+  // month/year), not the client's flat default.
+  const cv = client.monthContractValue ?? client.contractValue;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
@@ -102,14 +142,14 @@ const MonthlyPaymentModal = ({
         </div>
         <div className="bg-gray-50 rounded-lg p-3 mb-4 text-sm">
           <span className="text-gray-500">Monthly contract: </span>
-          <span className="font-semibold">{formatCurrency(client.contractValue)}</span>
+          <span className="font-semibold">{formatCurrency(cv)}</span>
         </div>
         <div className="space-y-3">
           <div>
             <label className="text-sm font-medium text-gray-700">Amount Paid (₹) *</label>
-            <input type="number" className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={form.amount} onChange={e => set('amount', e.target.value)} placeholder={String(client.contractValue)} />
-            {Number(form.amount) < client.contractValue && Number(form.amount) > 0 && (
-              <p className="text-xs text-amber-600 mt-1">Partial — ₹{(client.contractValue - Number(form.amount)).toLocaleString('en-IN')} remaining</p>
+            <input type="number" className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={form.amount} onChange={e => set('amount', e.target.value)} placeholder={String(cv)} />
+            {Number(form.amount) < cv && Number(form.amount) > 0 && (
+              <p className="text-xs text-amber-600 mt-1">Partial — ₹{(cv - Number(form.amount)).toLocaleString('en-IN')} remaining</p>
             )}
           </div>
           <div><label className="text-sm font-medium text-gray-700">Payment Date *</label><input type="date" className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={form.paymentDate} onChange={e => set('paymentDate', e.target.value)} /></div>
@@ -264,6 +304,7 @@ export default function ClientsPage() {
   const [clientModal, setClientModal] = useState<null | 'add' | Client>(null);
   const [payModal, setPayModal] = useState<null | { client: Client; existingPayment: Payment | null }>(null);
   const [completeModal, setCompleteModal] = useState<null | Client>(null);
+  const [valueModal, setValueModal] = useState<null | Client>(null);
 
   const { data: rawClients = [], isLoading } = useQuery<Client[]>({
     queryKey: ['clients', search, statusFilter, selMonth, selYear],
@@ -297,6 +338,10 @@ export default function ClientsPage() {
   const resumeClient = useMutation({ mutationFn: (id: string) => clientsApi.resume(id), onSuccess: () => qc.invalidateQueries({ queryKey: ['clients'] }) });
   const completeClient = useMutation({ mutationFn: ({ id, endDate }: { id: string; endDate: string }) => clientsApi.complete(id, endDate), onSuccess: () => { qc.invalidateQueries({ queryKey: ['clients'] }); setCompleteModal(null); } });
   const reactivateClient = useMutation({ mutationFn: (id: string) => clientsApi.reactivate(id), onSuccess: () => qc.invalidateQueries({ queryKey: ['clients'] }) });
+  const setMonthValue = useMutation({
+    mutationFn: ({ id, value }: { id: string; value: number | null }) => clientsApi.setMonthValue(id, selMonth, selYear, value),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['clients'] }); setValueModal(null); },
+  });
   const createPayment = useMutation({ mutationFn: (d: any) => paymentsApi.create(d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['clients'] }); setPayModal(null); } });
   const updatePayment = useMutation({ mutationFn: ({ id, d }: any) => paymentsApi.update(id, d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['clients'] }); setPayModal(null); } });
 
@@ -341,6 +386,14 @@ export default function ClientsPage() {
     }
   };
 
+  const handleSaveMonthValue = (client: Client, value: number) => {
+    setMonthValue.mutate({ id: client._id, value });
+  };
+
+  const handleResetMonthValue = (client: Client) => {
+    setMonthValue.mutate({ id: client._id, value: null });
+  };
+
   const years = Array.from({ length: 4 }, (_, i) => now.year - i);
 
   const kpis = rawClients.reduce((acc: any, c: any) => {
@@ -348,11 +401,12 @@ export default function ClientsPage() {
     const startedBySelMonth = !start || start.getFullYear() < selYear ||
       (start.getFullYear() === selYear && start.getMonth() + 1 <= selMonth);
     if (startedBySelMonth) {
+      const monthValue = c.monthContractValue ?? c.contractValue ?? 0;
       // A paused client isn't expected to pay for this month, so it shouldn't
       // inflate the "Total Revenue" figure while paused.
-      if (c.status !== 'Paused') acc.totalContractValue += c.contractValue || 0;
+      if (c.status !== 'Paused') acc.totalContractValue += monthValue;
       acc.totalCollected += c.selPaid || 0;
-      acc.totalPending += c.selRemaining ?? Math.max(0, (c.contractValue || 0) - (c.selPaid || 0));
+      acc.totalPending += c.selRemaining ?? Math.max(0, monthValue - (c.selPaid || 0));
     }
     return acc;
   }, { totalContractValue: 0, totalCollected: 0, totalPending: 0 });
@@ -363,7 +417,8 @@ export default function ClientsPage() {
       {clients.map((client: any) => {
         const mStatus   = client.status;
         const paid      = client.selPaid ?? 0;
-        const remaining = client.selRemaining ?? client.contractValue;
+        const monthValue = client.monthContractValue ?? client.contractValue;
+        const remaining = client.selRemaining ?? monthValue;
         const payment   = client.selPayment ?? null;
         const totalReceived = client.receivedAmount ?? 0;
         const pct = client.totalDue > 0 ? Math.min(100, (totalReceived / client.totalDue) * 100) : 0;
@@ -396,7 +451,15 @@ export default function ClientsPage() {
             </div>
 
             <div className="space-y-1.5 mb-3">
-              <div className="flex justify-between text-sm"><span className="text-gray-500">Monthly</span><span className="font-medium">{formatCurrency(client.contractValue)}</span></div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-500">Monthly {monthValue !== client.contractValue && <span className="text-amber-500 font-medium">(custom)</span>}</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="font-medium">{formatCurrency(monthValue)}</span>
+                  {!client.endDate && (
+                    <button onClick={() => setValueModal(client)} title="Set this month's contract value" className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-primary"><IndianRupee className="w-3 h-3" /></button>
+                  )}
+                </span>
+              </div>
               <div className="flex justify-between text-sm"><span className="text-gray-500">All-time Received</span><span className="font-medium text-emerald-600">{formatCurrency(totalReceived)}</span></div>
               <div className="flex justify-between text-sm"><span className="text-gray-500">Outstanding</span><span className="font-medium text-red-500">{formatCurrency(client.pendingAmount ?? 0)}</span></div>
             </div>
@@ -421,7 +484,7 @@ export default function ClientsPage() {
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-xs font-medium text-gray-600">{MONTHS[selMonth - 1]} {selYear}</span>
                 {mStatus === 'Paid' && <span className="text-xs text-emerald-600 font-medium">✓ {formatCurrency(paid)}</span>}
-                {mStatus === 'Partial' && <span className="text-xs text-amber-600 font-medium">⚡ {formatCurrency(paid)} / {formatCurrency(client.contractValue)}</span>}
+                {mStatus === 'Partial' && <span className="text-xs text-amber-600 font-medium">⚡ {formatCurrency(paid)} / {formatCurrency(monthValue)}</span>}
                 {mStatus === 'Unpaid' && <span className="text-xs text-red-500 font-medium">✗ Unpaid</span>}
                 {mStatus === 'NotStarted' && <span className="text-xs text-gray-400 font-medium">Contract not started yet</span>}
                 {mStatus === 'Upcoming' && <span className="text-xs text-blue-500 font-medium">Due {client.dueDate ? formatDate(client.dueDate) : 'later this month'}</span>}
@@ -495,7 +558,8 @@ export default function ClientsPage() {
             {clients.map((client: any) => {
               const mStatus   = client.status;
               const paid      = client.selPaid ?? 0;
-              const remaining = client.selRemaining ?? client.contractValue;
+              const monthValue = client.monthContractValue ?? client.contractValue;
+              const remaining = client.selRemaining ?? monthValue;
               const payment   = client.selPayment ?? null;
               return (
                 <tr
@@ -519,7 +583,15 @@ export default function ClientsPage() {
                     {client.notes && <div className="text-xs text-gray-400 truncate max-w-[160px]">{client.notes}</div>}
                   </td>
                   <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(client.startDate)}</td>
-                  <td className="px-4 py-3 font-medium whitespace-nowrap">{formatCurrency(client.contractValue)}</td>
+                  <td className="px-4 py-3 font-medium whitespace-nowrap">
+                    <span className="flex items-center gap-1.5">
+                      {formatCurrency(monthValue)}
+                      {monthValue !== client.contractValue && <span className="text-[10px] text-amber-500 font-semibold">custom</span>}
+                      {!client.endDate && (
+                        <button onClick={() => setValueModal(client)} title="Set this month's contract value" className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-primary"><IndianRupee className="w-3 h-3" /></button>
+                      )}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 font-medium text-emerald-600 whitespace-nowrap">{formatCurrency(client.receivedAmount ?? 0)}</td>
                   <td className="px-4 py-3 font-semibold whitespace-nowrap">
                     {paid > 0 ? <span className="text-emerald-600">{formatCurrency(paid)}</span> : <span className="text-gray-300">—</span>}
@@ -537,7 +609,7 @@ export default function ClientsPage() {
                               ? <span className="text-xs text-gray-400 font-medium">⏸ Paused</span>
                               : mStatus === 'Completed'
                                 ? <span className="text-xs text-slate-400 font-medium">✓ Completed</span>
-                                : <span className="text-red-500 font-semibold">{formatCurrency(client.contractValue)}</span>}
+                                : <span className="text-red-500 font-semibold">{formatCurrency(monthValue)}</span>}
                   </td>
 
                   {/* Month Status — compact interactive dropdown */}
@@ -709,6 +781,16 @@ export default function ClientsPage() {
           client={completeModal}
           onSave={handleSaveComplete}
           onClose={() => setCompleteModal(null)}
+        />
+      )}
+      {valueModal && (
+        <MonthValueModal
+          client={valueModal}
+          month={selMonth}
+          year={selYear}
+          onSave={(value) => handleSaveMonthValue(valueModal, value)}
+          onReset={() => handleResetMonthValue(valueModal)}
+          onClose={() => setValueModal(null)}
         />
       )}
       {payModal && (

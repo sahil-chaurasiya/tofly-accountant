@@ -37,6 +37,7 @@ export const clientsApi = {
   resume: (id: string) => api.post(`/clients/${id}/resume`, {}),
   complete: (id: string, endDate?: string) => api.post(`/clients/${id}/complete`, endDate ? { endDate } : {}),
   reactivate: (id: string) => api.post(`/clients/${id}/reactivate`, {}),
+  setMonthValue: (id: string, month: number, year: number, value: number | null) => api.put(`/clients/${id}/month-value`, { month, year, value }),
   delete: (id: string) => api.delete(`/clients/${id}`),
 };
 

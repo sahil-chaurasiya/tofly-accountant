@@ -21,6 +21,15 @@ const clientSchema = new mongoose.Schema({
   // pause, this is meant to be permanent: if the client comes back, they're
   // re-added as a brand new client rather than reactivated.
   endDate: { type: Date, default: null },
+  // Per-month overrides of the monthly contract value — e.g. a one-off
+  // discount or a rate hike for a single month. Only the listed (year, month)
+  // pair is affected; every other month keeps using `contractValue` above.
+  contractValueOverrides: [{
+    year: { type: Number, required: true },
+    month: { type: Number, required: true, min: 1, max: 12 },
+    value: { type: Number, required: true, min: 0 },
+    _id: false,
+  }],
   // Manual drag-and-drop position on the Clients page (lower = earlier).
   // New clients are appended to the end (see createClient).
   sortOrder: { type: Number, default: 0 },

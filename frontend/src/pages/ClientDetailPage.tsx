@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { clientsApi, paymentsApi } from '../services/api';
 import { formatCurrency, formatDate, getStatusColor, MONTHS } from '../lib/utils';
-import { ArrowLeft, Plus, Trash2, Pencil, X, CheckCircle2, AlertCircle, Clock, ChevronDown, ChevronUp, PauseCircle, PlayCircle, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Pencil, X, CheckCircle2, AlertCircle, Clock, ChevronDown, ChevronUp, PauseCircle, PlayCircle, RotateCcw, IndianRupee } from 'lucide-react';
 
 // ─── Monthly Payment Modal ────────────────────────────────────────────────────
 const MonthPaymentModal = ({
@@ -126,6 +126,42 @@ const CompleteClientModal = ({ name, onSave, onClose }: { name: string; onSave: 
   );
 };
 
+// ─── Month Contract Value Modal ────────────────────────────────────────────────
+const MonthValueModal = ({
+  name, defaultValue, current, month, year, onSave, onReset, onClose,
+}: {
+  name: string; defaultValue: number; current: number; month: number; year: number;
+  onSave: (value: number) => void; onReset: () => void; onClose: () => void;
+}) => {
+  const isOverridden = current !== defaultValue;
+  const [value, setValue] = useState(String(current));
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+        <h2 className="text-lg font-bold mb-1">{name} — {MONTHS[month - 1]} {year}</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Change the contract value for just this one month. Every other month keeps using the normal {formatCurrency(defaultValue)}.
+        </p>
+        <label className="text-sm font-medium text-gray-700">Contract Value for {MONTHS[month - 1]} (₹) *</label>
+        <input
+          type="number"
+          className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          value={value}
+          onChange={e => setValue(e.target.value)}
+        />
+        {isOverridden && <p className="text-xs text-gray-400 mt-1">Normal monthly value: {formatCurrency(defaultValue)}</p>}
+        <div className="flex gap-3 mt-5">
+          <button onClick={onClose} className="flex-1 border rounded-lg py-2 text-sm font-medium hover:bg-gray-50">Cancel</button>
+          {isOverridden && (
+            <button onClick={onReset} className="flex-1 border border-amber-200 text-amber-600 rounded-lg py-2 text-sm font-medium hover:bg-amber-50">Reset to Default</button>
+          )}
+          <button onClick={() => onSave(Number(value))} className="flex-1 bg-primary text-white rounded-lg py-2 text-sm font-medium hover:bg-primary/90">Save</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── Status pill ──────────────────────────────────────────────────────────────
 const StatusPill = ({ status }: { status: string }) => {
   const cfg: Record<string, { cls: string; icon: React.ReactNode; label: string }> = {
@@ -154,6 +190,7 @@ export default function ClientDetailPage() {
   } | null>(null);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
   const [completeModal, setCompleteModal] = useState(false);
+  const [valueModal, setValueModal] = useState<{ month: number; year: number; current: number } | null>(null);
 
   const { data: client, isLoading } = useQuery({
     queryKey: ['client', id],
@@ -187,6 +224,10 @@ export default function ClientDetailPage() {
   const reactivateClient = useMutation({
     mutationFn: () => clientsApi.reactivate(id!),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['client', id] }),
+  });
+  const setMonthValue = useMutation({
+    mutationFn: ({ month, year, value }: { month: number; year: number; value: number | null }) => clientsApi.setMonthValue(id!, month, year, value),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['client', id] }); setValueModal(null); },
   });
 
   const handleSavePayment = (data: any) => {
@@ -305,7 +346,7 @@ export default function ClientDetailPage() {
         <div className="bg-white rounded-xl border p-4">
           <p className="text-xs text-gray-400 uppercase mb-1">Total Due</p>
           <p className="text-xl font-bold text-gray-900">{formatCurrency(totalDue)}</p>
-          <p className="text-xs text-gray-400 mt-1">{totalMonths} × {formatCurrency(client.contractValue)}</p>
+          <p className="text-xs text-gray-400 mt-1">across {totalMonths} billable months</p>
         </div>
         <div className="bg-white rounded-xl border p-4">
           <p className="text-xs text-gray-400 uppercase mb-1">Outstanding</p>
@@ -379,6 +420,17 @@ export default function ClientDetailPage() {
                       {row.status === 'Partial' && (
                         <span className="text-xs text-gray-400 ml-2">of {formatCurrency(row.contractValue)}</span>
                       )}
+                    </div>
+
+                    {/* This month's contract value + edit */}
+                    <div className="w-32 flex-shrink-0 flex items-center justify-end gap-1 text-xs text-gray-400">
+                      {row.contractValue !== client.contractValue && <span className="text-amber-500 font-semibold">custom</span>}
+                      <span>{formatCurrency(row.contractValue)}</span>
+                      <button
+                        onClick={e => { e.stopPropagation(); setValueModal({ month: row.month, year: row.year, current: row.contractValue }); }}
+                        title="Set contract value for this month"
+                        className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-primary"
+                      ><IndianRupee className="w-3 h-3" /></button>
                     </div>
 
                     {/* Remaining */}
@@ -481,6 +533,18 @@ export default function ClientDetailPage() {
           name={client.name}
           onSave={(endDate) => completeClient.mutate(endDate)}
           onClose={() => setCompleteModal(false)}
+        />
+      )}
+      {valueModal && (
+        <MonthValueModal
+          name={client.name}
+          defaultValue={client.contractValue}
+          current={valueModal.current}
+          month={valueModal.month}
+          year={valueModal.year}
+          onSave={(value) => setMonthValue.mutate({ month: valueModal.month, year: valueModal.year, value })}
+          onReset={() => setMonthValue.mutate({ month: valueModal.month, year: valueModal.year, value: null })}
+          onClose={() => setValueModal(null)}
         />
       )}
     </div>

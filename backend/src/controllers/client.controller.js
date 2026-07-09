@@ -34,6 +34,14 @@ const hasEndedByMonth = (endDate, year, month) => {
   return year > endYear || (year === endYear && month > endMonth);
 };
 
+// The contract value actually owed for a specific (year, month): the
+// one-off override for that month if one was set, otherwise the client's
+// normal/default monthly value. Overrides never affect any other month.
+const contractValueFor = (defaultValue, overrides, year, month) => {
+  const override = (overrides || []).find(o => o.year === year && o.month === month);
+  return override ? override.value : defaultValue;
+};
+
 // Build month-by-month ledger from contract start to today.
 // Each month's status is decided by, in priority order:
 //   1. Was it actually paid (fully/partially)? Money collected always counts,
@@ -44,7 +52,7 @@ const hasEndedByMonth = (endDate, year, month) => {
 // "billable" months (Paid/Partial/Unpaid) are the ones that count toward
 // total revenue/dues; 'Paused' and 'Upcoming' months are excluded until they
 // resolve into one of the billable states.
-const buildMonthLedger = (startDate, contractValue, payments, pauseHistory, endDate) => {
+const buildMonthLedger = (startDate, contractValue, payments, pauseHistory, endDate, overrides) => {
   const start = new Date(startDate);
   const now = new Date();
   // A completed contract stops generating months after the one `endDate`
@@ -69,18 +77,21 @@ const buildMonthLedger = (startDate, contractValue, payments, pauseHistory, endD
     const dueDate = billingDateFor(start, y, m);
     const notDueYet = now < dueDate;
     const paused = isPausedOn(dueDate, pauseHistory);
+    // This month's own contract value — a one-off override if set, else the
+    // client's default.
+    const monthValue = contractValueFor(contractValue, overrides, y, m);
 
     let status;
-    if (totalPaid >= contractValue) status = 'Paid';
+    if (totalPaid >= monthValue) status = 'Paid';
     else if (totalPaid > 0) status = 'Partial';
     else if (paused) status = 'Paused';
     else if (notDueYet) status = 'Upcoming';
     else status = 'Unpaid';
 
     const billable = status !== 'Paused' && status !== 'Upcoming';
-    const remaining = (status === 'Unpaid' || status === 'Partial') ? Math.max(0, contractValue - totalPaid) : 0;
+    const remaining = (status === 'Unpaid' || status === 'Partial') ? Math.max(0, monthValue - totalPaid) : 0;
 
-    months.push({ month: m, year: y, contractValue, totalPaid, remaining, status, dueDate, billable, payments: monthPayments });
+    months.push({ month: m, year: y, contractValue: monthValue, totalPaid, remaining, status, dueDate, billable, payments: monthPayments });
     m++;
     if (m > 12) { m = 1; y++; }
   }
@@ -89,7 +100,7 @@ const buildMonthLedger = (startDate, contractValue, payments, pauseHistory, endD
 
 // Totals used by the dashboard/detail views — pause- and due-date-aware.
 const computeClientTotals = (client, payments) => {
-  const ledger = buildMonthLedger(client.startDate, client.contractValue, payments, client.pauseHistory, client.endDate);
+  const ledger = buildMonthLedger(client.startDate, client.contractValue, payments, client.pauseHistory, client.endDate, client.contractValueOverrides);
   const totalReceived = payments.reduce((s, p) => s + p.amount, 0);
   const totalDue = ledger.filter(m => m.billable).reduce((s, m) => s + m.contractValue, 0);
   return { ledger, totalReceived, totalDue, pendingAmount: Math.max(0, totalDue - totalReceived) };
@@ -116,6 +127,9 @@ const getClientWithStats = async (client, targetMonth, targetYear) => {
   // end month itself still bills normally — only months strictly after it
   // are cut off.)
   const ended     = hasStarted && hasEndedByMonth(client.endDate, curYear, curMonth);
+  // What's actually owed for the selected month — a one-off override if one
+  // was set for it, otherwise the client's normal monthly value.
+  const monthContractValue = contractValueFor(client.contractValue, client.contractValueOverrides, curYear, curMonth);
 
   // Selected month stats — clients that hadn't started yet, or whose contract
   // had already ended, in the selected month have no obligation for that
@@ -126,13 +140,13 @@ const getClientWithStats = async (client, targetMonth, targetYear) => {
   let status = 'Unpaid';
   if (!hasStarted) status = 'NotStarted';
   else if (ended) status = 'Completed';
-  else if (selPaid >= client.contractValue) status = 'Paid';
+  else if (selPaid >= monthContractValue) status = 'Paid';
   else if (selPaid > 0) status = 'Partial';
   else if (paused) status = 'Paused';
   else if (notDueYet) status = 'Upcoming';
   else status = 'Unpaid';
 
-  const selRemaining = (status === 'Unpaid' || status === 'Partial') ? Math.max(0, client.contractValue - selPaid) : 0;
+  const selRemaining = (status === 'Unpaid' || status === 'Partial') ? Math.max(0, monthContractValue - selPaid) : 0;
 
   // All-time totals (for detail page) — pause/due-date aware via buildMonthLedger,
   // which only builds months from client.startDate onward.
@@ -144,6 +158,10 @@ const getClientWithStats = async (client, targetMonth, targetYear) => {
     hasStarted,
     ended,
     dueDate,
+    // The actual amount owed for the selected month (accounts for any
+    // one-off override) — use this instead of `contractValue` whenever
+    // displaying/computing anything tied to the selected month.
+    monthContractValue,
     selPaid,
     selRemaining,
     selPayment: selPayments[0] || null,
@@ -197,6 +215,7 @@ exports.createClient = async (req, res) => {
     delete body.isActive;
     delete body.pauseHistory;
     delete body.endDate;
+    delete body.contractValueOverrides;
     // New clients go to the end of the manually-dragged order, not the top.
     const last = await Client.findOne().sort({ sortOrder: -1 });
     body.sortOrder = (last?.sortOrder ?? -1) + 1;
@@ -213,6 +232,7 @@ exports.updateClient = async (req, res) => {
     delete body.isActive;
     delete body.pauseHistory;
     delete body.endDate;
+    delete body.contractValueOverrides;
     const client = await Client.findByIdAndUpdate(req.params.id, body, { new: true, runValidators: true });
     if (!client) return res.status(404).json({ message: 'Client not found' });
     res.json(client);
@@ -299,6 +319,38 @@ exports.reactivateClient = async (req, res) => {
   }
 };
 
+// Set (or clear) a one-off contract value for a single month. Only that
+// (year, month) is affected — every other month keeps using the client's
+// normal `contractValue`. Send `value: null` to remove an override and fall
+// back to the default again.
+exports.setMonthContractValue = async (req, res) => {
+  try {
+    const { month, year, value } = req.body;
+    const m = parseInt(month);
+    const y = parseInt(year);
+    if (!m || !y) return res.status(400).json({ message: 'month and year are required' });
+
+    const client = await Client.findById(req.params.id);
+    if (!client) return res.status(404).json({ message: 'Client not found' });
+
+    const idx = client.contractValueOverrides.findIndex(o => o.year === y && o.month === m);
+
+    if (value === null || value === undefined || value === '') {
+      if (idx !== -1) client.contractValueOverrides.splice(idx, 1);
+    } else {
+      const v = Number(value);
+      if (isNaN(v) || v < 0) return res.status(400).json({ message: 'value must be a non-negative number' });
+      if (idx !== -1) client.contractValueOverrides[idx].value = v;
+      else client.contractValueOverrides.push({ year: y, month: m, value: v });
+    }
+
+    await client.save();
+    res.json(client);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
 exports.deleteClient = async (req, res) => {
   try {
     const client = await Client.findByIdAndDelete(req.params.id);
@@ -334,3 +386,4 @@ exports.reorderClients = async (req, res) => {
 exports.computeClientTotals = computeClientTotals;
 exports.buildMonthLedger = buildMonthLedger;
 exports.hasEndedByMonth = hasEndedByMonth;
+exports.contractValueFor = contractValueFor;
