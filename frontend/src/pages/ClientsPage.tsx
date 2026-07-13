@@ -402,11 +402,20 @@ export default function ClientsPage() {
       (start.getFullYear() === selYear && start.getMonth() + 1 <= selMonth);
     if (startedBySelMonth) {
       const monthValue = c.monthContractValue ?? c.contractValue ?? 0;
-      // A paused client isn't expected to pay for this month, so it shouldn't
-      // inflate the "Total Revenue" figure while paused.
-      if (c.status !== 'Paused') acc.totalContractValue += monthValue;
-      acc.totalCollected += c.selPaid || 0;
-      acc.totalPending += c.selRemaining ?? Math.max(0, monthValue - (c.selPaid || 0));
+      // Paused or Completed clients have no obligation for this month, so
+      // they shouldn't count toward this month's Total Revenue, Collected,
+      // or Pending at all.
+      if (c.status !== 'Paused' && c.status !== 'Completed') {
+        const paid = c.selPaid || 0;
+        acc.totalContractValue += monthValue;
+        acc.totalCollected += paid;
+        // Deliberately NOT using c.selRemaining here — the backend zeroes
+        // that out for "Upcoming" (not-yet-due) clients, since it's meant
+        // to drive the per-row "overdue" badge, not this total. Money that's
+        // owed but simply isn't due yet is still pending, not collected —
+        // otherwise it silently falls out of Revenue = Collected + Pending.
+        acc.totalPending += Math.max(0, monthValue - paid);
+      }
     }
     return acc;
   }, { totalContractValue: 0, totalCollected: 0, totalPending: 0 });
