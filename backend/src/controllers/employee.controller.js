@@ -16,6 +16,8 @@ exports.createEmployee = async (req, res) => {
     // Seed salary history with the starting salary from day one, so that
     // any future hike has a proper "before" value to fall back on.
     data.salaryHistory = [{ amount: Number(data.monthlySalary), effectiveFrom: data.joiningDate }];
+    // An empty string from a blank date input would fail Mongoose's Date cast.
+    if (data.leavingDate === '') data.leavingDate = null;
     const employee = await Employee.create(data);
     res.status(201).json(employee);
   } catch (err) {
@@ -30,9 +32,16 @@ exports.updateEmployee = async (req, res) => {
 
     // salaryEffectiveFrom is an optional hint from the client for *when* a
     // salary change should kick in. It's never stored on the employee itself.
-    const { monthlySalary, salaryEffectiveFrom, ...rest } = req.body;
+    // leavingDate is handled separately below so a blank date input (empty
+    // string) can be used to clear it back to null instead of failing the
+    // Date cast.
+    const { monthlySalary, salaryEffectiveFrom, leavingDate, ...rest } = req.body;
 
     Object.assign(employee, rest);
+
+    if (leavingDate !== undefined) {
+      employee.leavingDate = leavingDate ? new Date(leavingDate) : null;
+    }
 
     if (monthlySalary !== undefined && Number(monthlySalary) !== employee.monthlySalary) {
       // Employees created before salary history existed may have an empty

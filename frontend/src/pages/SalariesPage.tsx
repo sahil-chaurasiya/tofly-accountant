@@ -7,7 +7,7 @@ import { Plus, CheckCircle, Clock, Pencil, Trash2, Undo2 } from 'lucide-react';
 const todayStr = () => new Date().toISOString().split('T')[0];
 
 const EmployeeModal = ({ initial, onSave, onClose }: any) => {
-  const [form, setForm] = useState(initial || { name: '', email: '', joiningDate: '', monthlySalary: '' });
+  const [form, setForm] = useState(initial || { name: '', email: '', joiningDate: '', monthlySalary: '', leavingDate: '' });
   const [salaryEffectiveFrom, setSalaryEffectiveFrom] = useState(todayStr());
   const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }));
   const isEditing = !!initial;
@@ -26,6 +26,13 @@ const EmployeeModal = ({ initial, onSave, onClose }: any) => {
               <label className="text-sm font-medium text-amber-800">Salary change effective from</label>
               <input type="date" className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={salaryEffectiveFrom} onChange={e => setSalaryEffectiveFrom(e.target.value)} />
               <p className="text-[11px] text-amber-700 mt-1">Past months keep the old salary — this hike only applies from the date above onward.</p>
+            </div>
+          )}
+          {isEditing && (
+            <div>
+              <label className="text-sm font-medium text-gray-700">Leaving Date</label>
+              <input type="date" className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={form.leavingDate?.split('T')[0] || ''} onChange={e => set('leavingDate', e.target.value)} />
+              <p className="text-[11px] text-gray-400 mt-1">Only fill this in once they've actually left. Their salary for that month is prorated to the days worked, and they stop appearing from the following month onward. Clear this field to undo.</p>
             </div>
           )}
         </div>
@@ -126,9 +133,18 @@ export default function SalariesPage() {
                     {summary.summary?.map((row: any) => {
                       const actualSalary = row.monthlySalaryForMonth ?? row.employee.monthlySalary;
                       const hasDeduction = row.attendanceSynced && row.calculatedSalary < actualSalary;
+                      const leftThisMonth = row.employee.leavingDate && (() => {
+                        const d = new Date(row.employee.leavingDate);
+                        return d.getFullYear() === selYear && d.getMonth() + 1 === selMonth;
+                      })();
                       return (
                         <tr key={row.employee._id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 font-medium">{row.employee.name}</td>
+                          <td className="px-4 py-3 font-medium">
+                            {row.employee.name}
+                            {leftThisMonth && (
+                              <span className="block text-[11px] font-normal text-amber-600">Left {formatDate(row.employee.leavingDate)} — salary prorated</span>
+                            )}
+                          </td>
                           <td className="px-4 py-3">{formatCurrency(actualSalary)}</td>
                           <td className="px-4 py-3">
                             {row.attendanceSynced ? (
@@ -176,16 +192,23 @@ export default function SalariesPage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                {['Name', 'Email', 'Joining Date', 'Monthly Salary', ''].map(h => <th key={h} className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">{h}</th>)}
+                {['Name', 'Email', 'Joining Date', 'Monthly Salary', 'Status', ''].map(h => <th key={h} className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">{h}</th>)}
               </tr>
             </thead>
             <tbody className="divide-y">
               {employees.map((emp: any) => (
-                <tr key={emp._id} className="hover:bg-gray-50">
+                <tr key={emp._id} className={`hover:bg-gray-50 ${emp.leavingDate ? 'opacity-60' : ''}`}>
                   <td className="px-4 py-3 font-medium">{emp.name}</td>
                   <td className="px-4 py-3 text-gray-500">{emp.email || <span className="text-gray-300">—</span>}</td>
                   <td className="px-4 py-3 text-gray-500">{formatDate(emp.joiningDate)}</td>
                   <td className="px-4 py-3 font-semibold">{formatCurrency(emp.monthlySalary)}</td>
+                  <td className="px-4 py-3">
+                    {emp.leavingDate ? (
+                      <span className="text-xs font-medium w-fit px-2 py-1 rounded-full bg-gray-100 text-gray-600">Left {formatDate(emp.leavingDate)}</span>
+                    ) : (
+                      <span className="text-xs font-medium w-fit px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">Active</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
                       <button onClick={() => setEmpModal(emp)} className="p-1.5 hover:bg-gray-100 rounded"><Pencil className="w-3.5 h-3.5 text-gray-500" /></button>

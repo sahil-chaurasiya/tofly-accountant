@@ -22,6 +22,34 @@ function getSalaryForMonth(emp, year, month) {
   return applicable.length > 0 ? applicable[0].amount : emp.monthlySalary;
 }
 
+// Is the given year/month strictly AFTER the month the employee left in?
+// The leaving month itself still gets a (prorated, see below) salary —
+// only months after it are cut off entirely. Same idea as a client's
+// endDate in client.controller.js.
+function hasLeftByMonth(leavingDate, year, month) {
+  if (!leavingDate) return false;
+  const left = new Date(leavingDate);
+  const leftYear = left.getFullYear();
+  const leftMonth = left.getMonth() + 1;
+  return year > leftYear || (year === leftYear && month > leftMonth);
+}
+
+// What an employee was actually owed for a given month: their salary-history
+// rate, prorated down if they left partway through the month. They're paid
+// for the days 1..leavingDate (inclusive) at that rate's daily amount — the
+// remaining days in the month aren't owed at all, same per-day rate the
+// absence deduction below uses.
+function getPayableSalaryForMonth(emp, year, month) {
+  const base = getSalaryForMonth(emp, year, month);
+  if (!emp.leavingDate) return base;
+  const monthStart = new Date(year, month - 1, 1);
+  const monthEnd = new Date(year, month, 0, 23, 59, 59, 999);
+  const left = new Date(emp.leavingDate);
+  if (left < monthStart || left > monthEnd) return base;
+  const daysInMonth = new Date(year, month, 0).getDate();
+  return Math.round((base * left.getDate()) / daysInMonth);
+}
+
 exports.getSalaries = async (req, res) => {
   try {
     const { month, year, employeeId } = req.query;
@@ -42,10 +70,11 @@ exports.getMonthlySummary = async (req, res) => {
     const m = parseInt(month);
     const y = parseInt(year);
     const monthEnd = new Date(y, m, 0, 23, 59, 59, 999);
-    // Only show employees who had actually joined by the end of this month —
-    // no salary due (and nothing to mark pending) for months before they existed.
+    // Only show employees who had actually joined by the end of this month,
+    // and who hadn't already left before it started — no salary due (and
+    // nothing to mark pending) for months before they existed or after they left.
     const allEmployees = await Employee.find({ isActive: true });
-    const employees = allEmployees.filter((emp) => new Date(emp.joiningDate) <= monthEnd);
+    const employees = allEmployees.filter((emp) => new Date(emp.joiningDate) <= monthEnd && !hasLeftByMonth(emp.leavingDate, y, m));
     const rawSalaries = await SalaryPayment.find({ month: m, year: y }).populate('employeeId', 'name monthlySalary');
     // A salary record can be orphaned if its employee was later deleted —
     // populate() then returns null for employeeId. Filter those out so we
@@ -61,8 +90,9 @@ exports.getMonthlySummary = async (req, res) => {
       const email = (emp.email || '').trim().toLowerCase();
       // Use the salary that applied *for this specific month*, not whatever
       // the employee's current salary is today — so past hikes don't bleed
-      // backwards into months that were already calculated.
-      const baseSalary = getSalaryForMonth(emp, y, m);
+      // backwards into months that were already calculated. Already prorated
+      // down if this is the month they left partway through.
+      const baseSalary = getPayableSalaryForMonth(emp, y, m);
 
       let leavesTaken = null;
       let calculatedSalary = baseSalary;
@@ -99,7 +129,7 @@ exports.getMonthlySummary = async (req, res) => {
       };
     });
 
-    const totalDue = employees.reduce((sum, e) => sum + getSalaryForMonth(e, y, m), 0);
+    const totalDue = employees.reduce((sum, e) => sum + getPayableSalaryForMonth(e, y, m), 0);
     const totalPaid = salaries.filter((s) => s.status === 'Paid').reduce((sum, s) => sum + s.amountPaid, 0);
     const totalPending = totalDue - totalPaid;
 

@@ -72,9 +72,13 @@ export interface Payment {
 export interface Employee {
   _id: string;
   name: string;
+  email?: string;
   joiningDate: string;
   monthlySalary: number;
   isActive: boolean;
+  // Set once the employee has left. They stop showing up in the monthly
+  // salary run from the month after this date onward.
+  leavingDate?: string | null;
   salaryHistory?: { amount: number; effectiveFrom: string }[];
 }
 

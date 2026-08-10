@@ -6,6 +6,12 @@ const employeeSchema = new mongoose.Schema({
   joiningDate: { type: Date, required: true },
   monthlySalary: { type: Number, required: true, min: 0 },
   isActive: { type: Boolean, default: true },
+  // Date the employee left. Once set, they stop showing up in the monthly
+  // salary run for any month AFTER the one this date falls in — the month
+  // they actually left in still shows them, with their salary prorated to
+  // the days they worked (see getPayableSalaryForMonth in
+  // salary.controller.js). Clear it (set back to null) to undo.
+  leavingDate: { type: Date, default: null },
   // Tracks salary over time so a hike only applies going forward, not to
   // months that already happened. `monthlySalary` above always mirrors the
   // most recent (current) entry here for quick display in the register.
