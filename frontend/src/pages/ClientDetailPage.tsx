@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { clientsApi, paymentsApi } from '../services/api';
+import { clientsApi, paymentsApi, invoicesApi, companySettingsApi } from '../services/api';
+import { generateInvoicePdf, defaultCompany } from '../lib/invoicePdf';
+import { CompanySettings } from '../types';
 import { formatCurrency, formatDate, getStatusColor, MONTHS } from '../lib/utils';
-import { ArrowLeft, Plus, Trash2, Pencil, X, CheckCircle2, AlertCircle, Clock, ChevronDown, ChevronUp, PauseCircle, PlayCircle, RotateCcw, IndianRupee } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Pencil, X, CheckCircle2, AlertCircle, Clock, ChevronDown, ChevronUp, PauseCircle, PlayCircle, RotateCcw, IndianRupee, Download, Loader2 } from 'lucide-react';
 
 // ─── Monthly Payment Modal ────────────────────────────────────────────────────
 const MonthPaymentModal = ({
@@ -191,10 +193,17 @@ export default function ClientDetailPage() {
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
   const [completeModal, setCompleteModal] = useState(false);
   const [valueModal, setValueModal] = useState<{ month: number; year: number; current: number } | null>(null);
+  // "year-month" of the invoice currently being generated (drives the spinner / disables the other buttons)
+  const [invoicingKey, setInvoicingKey] = useState<string | null>(null);
 
   const { data: client, isLoading } = useQuery({
     queryKey: ['client', id],
     queryFn: () => clientsApi.getOne(id!).then(r => r.data),
+  });
+
+  const { data: companyData } = useQuery<CompanySettings>({
+    queryKey: ['company-settings'],
+    queryFn: async () => { const r = await companySettingsApi.get(); return r.data; },
   });
 
   const createPayment = useMutation({
@@ -233,6 +242,28 @@ export default function ClientDetailPage() {
   const handleSavePayment = (data: any) => {
     if (payModal?.existing) updatePayment.mutate({ pid: payModal.existing._id, data });
     else createPayment.mutate(data);
+  };
+
+  // One-click monthly invoice: same design as the Invoice page, single "Digital Marketing"
+  // line at this month's contract value. The invoice number is issued once per client+month
+  // by the backend, so re-downloading gives the same number.
+  const downloadInvoice = async (row: any) => {
+    if (invoicingKey || !client) return;
+    setInvoicingKey(`${row.year}-${row.month}`);
+    try {
+      const { data } = await invoicesApi.getMonthlyNumber(id!, row.month, row.year, row.contractValue);
+      await generateInvoicePdf({
+        company: companyData || defaultCompany,
+        billToName: client.name,
+        invoiceNumber: data.invoiceNumber,
+        invoiceDate: row.dueDate || new Date(row.year, row.month - 1, 1),
+        lineItems: [{ name: 'Digital Marketing', price: row.contractValue, quantity: 1 }],
+      });
+    } catch (e: any) {
+      alert(e?.response?.data?.message || 'Could not generate the invoice. Please check your connection and try again.');
+    } finally {
+      setInvoicingKey(null);
+    }
   };
 
   const toggleMonth = (key: string) => {
@@ -453,6 +484,21 @@ export default function ClientDetailPage() {
                       }`}
                     >
                       {row.totalPaid > 0 ? '✎ Edit' : '+ Record'}
+                    </button>
+
+                    {/* Download this month's invoice */}
+                    <button
+                      onClick={e => { e.stopPropagation(); downloadInvoice(row); }}
+                      disabled={row.status === 'Paused' || invoicingKey !== null}
+                      title={row.status === 'Paused'
+                        ? 'Client was paused this month — nothing to invoice'
+                        : `Download ${MONTHS[row.month - 1]} ${row.year} invoice`}
+                      className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {invoicingKey === key
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <Download className="w-3.5 h-3.5" />}
+                      Invoice
                     </button>
 
                     {/* Expand toggle */}

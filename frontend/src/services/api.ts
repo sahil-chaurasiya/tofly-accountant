@@ -49,6 +49,12 @@ export const paymentsApi = {
   delete: (id: string) => api.delete(`/payments/${id}`),
 };
 
+// Invoices — hands out stable invoice numbers (tofly_oct_2026_001, ...) for a client's monthly invoice
+export const invoicesApi = {
+  getMonthlyNumber: (clientId: string, month: number, year: number, amount?: number) =>
+    api.post('/invoices/monthly', { clientId, month, year, amount }),
+};
+
 // Employees
 export const employeesApi = {
   getAll: () => api.get('/employees'),

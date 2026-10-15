@@ -16,6 +16,7 @@ const dashboardRoutes = require('./routes/dashboard.routes');
 const reportRoutes = require('./routes/report.routes');
 const serviceRoutes = require('./routes/service.routes');
 const companySettingsRoutes = require('./routes/companySettings.routes');
+const invoiceRoutes = require('./routes/invoice.routes');
 
 const app = express();
 
@@ -44,6 +45,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/company-settings', companySettingsRoutes);
+app.use('/api/invoices', invoiceRoutes);
 
 app.get('/api/health', (req, res) => res.json({ status: 'OK', timestamp: new Date() }));
 
