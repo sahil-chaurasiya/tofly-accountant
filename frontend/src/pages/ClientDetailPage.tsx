@@ -9,10 +9,12 @@ import { ArrowLeft, Plus, Trash2, Pencil, X, CheckCircle2, AlertCircle, Clock, C
 
 // ─── Monthly Payment Modal ────────────────────────────────────────────────────
 const MonthPaymentModal = ({
-  clientId, contractValue, month, year, existing, onSave, onClose,
+  clientId, contractValue, month, year, existing, onSave, onClose, valueLabel = 'Monthly', fixed = false,
 }: {
   clientId: string; contractValue: number; month: number; year: number;
   existing?: any; onSave: (d: any) => void; onClose: () => void;
+  // Fixed-fee clients: "Project fee" / "Balance" instead of "Monthly".
+  valueLabel?: string; fixed?: boolean;
 }) => {
   const [form, setForm] = useState({
     amount: existing?.amount ?? '',
@@ -33,7 +35,7 @@ const MonthPaymentModal = ({
           <h2 className="text-lg font-bold">{existing ? 'Edit Payment' : 'Record Payment'}</h2>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
         </div>
-        <p className="text-sm text-gray-400 mb-4">{MONTHS[month - 1]} {year} · Monthly: {formatCurrency(contractValue)}</p>
+        <p className="text-sm text-gray-400 mb-4">{MONTHS[month - 1]} {year} · {valueLabel}: {formatCurrency(contractValue)}</p>
 
         <div className="space-y-3">
           <div>
@@ -53,7 +55,7 @@ const MonthPaymentModal = ({
             )}
             {amt >= contractValue && amt > 0 && (
               <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3" /> Full month paid
+                <CheckCircle2 className="w-3 h-3" /> {fixed ? 'Fully settled' : 'Full month paid'}
               </p>
             )}
           </div>
@@ -174,6 +176,7 @@ const StatusPill = ({ status }: { status: string }) => {
     Upcoming:   { cls: 'bg-blue-100 text-blue-600',      icon: <Clock className="w-3 h-3" />,          label: 'Not Due Yet' },
     Paused:     { cls: 'bg-gray-200 text-gray-600',      icon: <PauseCircle className="w-3 h-3" />,    label: 'Paused' },
     Completed:  { cls: 'bg-slate-200 text-slate-600',    icon: <CheckCircle2 className="w-3 h-3" />,   label: 'Completed' },
+    Covered:    { cls: 'bg-teal-100 text-teal-700',      icon: <CheckCircle2 className="w-3 h-3" />,   label: 'Covered' },
   };
   const c = cfg[status] ?? cfg['Unpaid'];
   return (
@@ -251,13 +254,16 @@ export default function ClientDetailPage() {
     if (invoicingKey || !client) return;
     setInvoicingKey(`${row.year}-${row.month}`);
     try {
-      const { data } = await invoicesApi.getMonthlyNumber(id!, row.month, row.year, row.contractValue);
+      // Fixed-fee clients are invoiced once, for the whole project fee.
+      const fixedClient = client.billingType === 'fixed';
+      const invoiceAmount = fixedClient ? client.contractValue : row.contractValue;
+      const { data } = await invoicesApi.getMonthlyNumber(id!, row.month, row.year, invoiceAmount);
       await generateInvoicePdf({
         company: companyData || defaultCompany,
         billToName: client.name,
         invoiceNumber: data.invoiceNumber,
         invoiceDate: row.dueDate || new Date(row.year, row.month - 1, 1),
-        lineItems: [{ name: 'Digital Marketing', price: row.contractValue, quantity: 1 }],
+        lineItems: [{ name: fixedClient ? `Digital Marketing (${client.durationMonths} months)` : 'Digital Marketing', price: invoiceAmount, quantity: 1 }],
       });
     } catch (e: any) {
       alert(e?.response?.data?.message || 'Could not generate the invoice. Please check your connection and try again.');
@@ -288,7 +294,10 @@ export default function ClientDetailPage() {
   const partialMonths = monthLedger.filter(m => m.status === 'Partial').length;
   const unpaidMonths = monthLedger.filter(m => m.status === 'Unpaid').length;
   const pausedMonths = monthLedger.filter(m => m.status === 'Paused').length;
+  const coveredMonths = monthLedger.filter(m => m.status === 'Covered').length;
   const totalMonths  = monthLedger.length;
+  const isFixedClient = client.billingType === 'fixed';
+  const modalRow = payModal ? monthLedger.find(r => r.month === payModal.month && r.year === payModal.year) : null;
   const totalDue     = client.totalDue ?? totalMonths * client.contractValue;
   const overallPct   = totalDue > 0 ? Math.min(100, (client.receivedAmount / totalDue) * 100) : 0;
 
@@ -301,7 +310,7 @@ export default function ClientDetailPage() {
         </Link>
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold text-gray-900 truncate">{client.name}</h1>
-          <p className="text-sm text-gray-400">Client since {formatDate(client.startDate)}{client.notes && ` · ${client.notes}`}</p>
+          <p className="text-sm text-gray-400">Client since {formatDate(client.startDate)}{isFixedClient && ` · Fixed fee for ${client.durationMonths} months${client.serviceEndDate ? ` (until ${formatDate(client.serviceEndDate)})` : ''}`}{client.notes && ` · ${client.notes}`}</p>
         </div>
         {client.endDate ? (
           <button
@@ -312,15 +321,17 @@ export default function ClientDetailPage() {
           </button>
         ) : (
           <>
-            <button
-              onClick={() => {
-                if (client.isActive === false) resumeClient.mutate();
-                else if (confirm(`Pause ${client.name}? Their monthly dues will stop accruing from today until you resume them. Everything billed so far stays exactly as it is.`)) pauseClient.mutate();
-              }}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition ${client.isActive === false ? 'border-emerald-200 text-emerald-600 hover:bg-emerald-50' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-            >
-              {client.isActive === false ? <><PlayCircle className="w-4 h-4" /> Resume</> : <><PauseCircle className="w-4 h-4" /> Pause</>}
-            </button>
+            {!isFixedClient && (
+              <button
+                onClick={() => {
+                  if (client.isActive === false) resumeClient.mutate();
+                  else if (confirm(`Pause ${client.name}? Their monthly dues will stop accruing from today until you resume them. Everything billed so far stays exactly as it is.`)) pauseClient.mutate();
+                }}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition ${client.isActive === false ? 'border-emerald-200 text-emerald-600 hover:bg-emerald-50' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+              >
+                {client.isActive === false ? <><PlayCircle className="w-4 h-4" /> Resume</> : <><PauseCircle className="w-4 h-4" /> Pause</>}
+              </button>
+            )}
             <button
               onClick={() => setCompleteModal(true)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition border-slate-200 text-slate-600 hover:bg-slate-50"
@@ -365,19 +376,19 @@ export default function ClientDetailPage() {
       {/* Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl border p-4">
-          <p className="text-xs text-gray-400 uppercase mb-1">Monthly Value</p>
+          <p className="text-xs text-gray-400 uppercase mb-1">{isFixedClient ? 'Project Fee' : 'Monthly Value'}</p>
           <p className="text-xl font-bold text-gray-900">{formatCurrency(client.contractValue)}</p>
-          <p className="text-xs text-gray-400 mt-1">per month</p>
+          <p className="text-xs text-gray-400 mt-1">{isFixedClient ? `one-time · covers ${client.durationMonths} months` : 'per month'}</p>
         </div>
         <div className="bg-white rounded-xl border p-4">
           <p className="text-xs text-gray-400 uppercase mb-1">Total Received</p>
           <p className="text-xl font-bold text-emerald-600">{formatCurrency(client.receivedAmount)}</p>
-          <p className="text-xs text-gray-400 mt-1">across {totalMonths} months</p>
+          <p className="text-xs text-gray-400 mt-1">{isFixedClient ? `across ${client.payments?.length ?? 0} payment${(client.payments?.length ?? 0) === 1 ? '' : 's'}` : `across ${totalMonths} months`}</p>
         </div>
         <div className="bg-white rounded-xl border p-4">
           <p className="text-xs text-gray-400 uppercase mb-1">Total Due</p>
           <p className="text-xl font-bold text-gray-900">{formatCurrency(totalDue)}</p>
-          <p className="text-xs text-gray-400 mt-1">across {totalMonths} billable months</p>
+          <p className="text-xs text-gray-400 mt-1">{isFixedClient ? 'one-time project fee' : `across ${totalMonths} billable months`}</p>
         </div>
         <div className="bg-white rounded-xl border p-4">
           <p className="text-xs text-gray-400 uppercase mb-1">Outstanding</p>
@@ -399,6 +410,9 @@ export default function ClientDetailPage() {
           <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /><span className="text-gray-500">Paid</span><span className="font-semibold">{paidMonths}</span></div>
           <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" /><span className="text-gray-500">Partial</span><span className="font-semibold">{partialMonths}</span></div>
           <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-red-400 inline-block" /><span className="text-gray-500">Unpaid</span><span className="font-semibold">{unpaidMonths}</span></div>
+          {coveredMonths > 0 && (
+            <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-teal-400 inline-block" /><span className="text-gray-500">Covered</span><span className="font-semibold">{coveredMonths}</span></div>
+          )}
           {pausedMonths > 0 && (
             <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-gray-400 inline-block" /><span className="text-gray-500">Paused</span><span className="font-semibold">{pausedMonths}</span></div>
           )}
@@ -436,6 +450,9 @@ export default function ClientDetailPage() {
                     <div className="w-32 flex-shrink-0">
                       <span className="font-medium text-sm text-gray-900">{MONTHS[row.month - 1]} {row.year}</span>
                       {isCurrentMonth && <span className="ml-2 text-xs text-primary font-semibold">← Current</span>}
+                      {isFixedClient && row.position != null && (
+                        <div className="text-[10px] text-violet-500">{row.position > row.total ? 'After service period' : `Month ${row.position} of ${row.total}`}</div>
+                      )}
                     </div>
 
                     {/* Status */}
@@ -455,13 +472,25 @@ export default function ClientDetailPage() {
 
                     {/* This month's contract value + edit */}
                     <div className="w-32 flex-shrink-0 flex items-center justify-end gap-1 text-xs text-gray-400">
-                      {row.contractValue !== client.contractValue && <span className="text-amber-500 font-semibold">custom</span>}
-                      <span>{formatCurrency(row.contractValue)}</span>
-                      <button
-                        onClick={e => { e.stopPropagation(); setValueModal({ month: row.month, year: row.year, current: row.contractValue }); }}
-                        title="Set contract value for this month"
-                        className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-primary"
-                      ><IndianRupee className="w-3 h-3" /></button>
+                      {isFixedClient ? (
+                        row.isBillingMonth ? (
+                          <><span className="text-violet-500 font-semibold">fee</span><span>{formatCurrency(row.contractValue)}</span></>
+                        ) : row.contractValue > 0 ? (
+                          <><span className="text-gray-400">balance</span><span>{formatCurrency(row.contractValue)}</span></>
+                        ) : (
+                          <span className="text-teal-500 font-medium">covered</span>
+                        )
+                      ) : (
+                        <>
+                          {row.contractValue !== client.contractValue && <span className="text-amber-500 font-semibold">custom</span>}
+                          <span>{formatCurrency(row.contractValue)}</span>
+                          <button
+                            onClick={e => { e.stopPropagation(); setValueModal({ month: row.month, year: row.year, current: row.contractValue }); }}
+                            title="Set contract value for this month"
+                            className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-primary"
+                          ><IndianRupee className="w-3 h-3" /></button>
+                        </>
+                      )}
                     </div>
 
                     {/* Remaining */}
@@ -489,10 +518,12 @@ export default function ClientDetailPage() {
                     {/* Download this month's invoice */}
                     <button
                       onClick={e => { e.stopPropagation(); downloadInvoice(row); }}
-                      disabled={row.status === 'Paused' || invoicingKey !== null}
+                      disabled={row.status === 'Paused' || invoicingKey !== null || (isFixedClient && !row.isBillingMonth)}
                       title={row.status === 'Paused'
                         ? 'Client was paused this month — nothing to invoice'
-                        : `Download ${MONTHS[row.month - 1]} ${row.year} invoice`}
+                        : (isFixedClient && !row.isBillingMonth)
+                          ? 'Fixed-fee clients are invoiced once, in their first month'
+                          : `Download ${MONTHS[row.month - 1]} ${row.year} invoice`}
                       className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       {invoicingKey === key
@@ -566,7 +597,9 @@ export default function ClientDetailPage() {
       {payModal && (
         <MonthPaymentModal
           clientId={id!}
-          contractValue={client.contractValue}
+          contractValue={isFixedClient ? (modalRow?.contractValue ?? client.contractValue) : client.contractValue}
+          valueLabel={isFixedClient ? (modalRow?.isBillingMonth ? 'Project fee' : 'Balance') : 'Monthly'}
+          fixed={isFixedClient}
           month={payModal.month}
           year={payModal.year}
           existing={payModal.existing}

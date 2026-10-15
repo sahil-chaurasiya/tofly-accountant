@@ -3,7 +3,7 @@ const Expense = require('../models/Expense');
 const SalaryPayment = require('../models/SalaryPayment');
 const EMIPayment = require('../models/EMIPayment');
 const Client = require('../models/Client');
-const { contractValueFor } = require('./client.controller');
+const { monthExpectedValue } = require('./client.controller');
 
 exports.getReport = async (req, res) => {
   try {
@@ -40,8 +40,9 @@ exports.getReport = async (req, res) => {
       const collection = await Promise.all(clients.map(async (c) => {
         const payments = await Payment.find({ clientId: c._id, paymentDate: { $gte: start, $lte: end } });
         const collected = payments.reduce((s, p) => s + p.amount, 0);
+        // Fixed-fee clients need their full payment history to know the balance owed that month.
         const contractValue = isSingleMonth
-          ? contractValueFor(c.contractValue, c.contractValueOverrides, start.getFullYear(), start.getMonth() + 1)
+          ? monthExpectedValue(c, c.billingType === 'fixed' ? await Payment.find({ clientId: c._id }) : [], start.getFullYear(), start.getMonth() + 1)
           : c.contractValue;
         return { clientName: c.name, contractValue, collected, payments };
       }));

@@ -14,6 +14,10 @@ export interface Client {
   name: string;
   startDate: string;
   contractValue: number;
+  // 'monthly' (default) = recurring monthly retainer. 'fixed' = freelance/project
+  // client: contractValue is ONE total fee covering `durationMonths` months.
+  billingType?: 'monthly' | 'fixed';
+  durationMonths?: number;
   notes: string;
   accountManager: string;
   workStatus: 'On Time' | 'Delayed' | '';
@@ -34,7 +38,10 @@ export interface Client {
   pendingAmount: number;
   totalDue: number;
   dueDate?: string | null;
-  status: 'Unpaid' | 'Partial' | 'Paid' | 'NotStarted' | 'Upcoming' | 'Paused' | 'Completed';
+  status: 'Unpaid' | 'Partial' | 'Paid' | 'NotStarted' | 'Upcoming' | 'Paused' | 'Completed' | 'Covered';
+  // Fixed-fee clients only: where the selected month sits in the service window.
+  cycle?: { position: number; total: number; isBillingMonth: boolean; inWindow: boolean } | null;
+  serviceEndDate?: string | null;
   payments?: Payment[];
   monthLedger?: MonthLedgerEntry[];
   createdAt: string;
@@ -46,10 +53,15 @@ export interface MonthLedgerEntry {
   contractValue: number;
   totalPaid: number;
   remaining: number;
-  status: 'Unpaid' | 'Partial' | 'Paid' | 'Upcoming' | 'Paused';
+  status: 'Unpaid' | 'Partial' | 'Paid' | 'Upcoming' | 'Paused' | 'Covered';
   dueDate: string;
   billable: boolean;
   payments: Payment[];
+  // Fixed-fee clients only
+  position?: number;
+  total?: number;
+  isBillingMonth?: boolean;
+  inWindow?: boolean;
 }
 
 export interface Payment {

@@ -3,6 +3,14 @@ const mongoose = require('mongoose');
 const clientSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   startDate: { type: Date, required: true },
+  // 'monthly' (default) — contractValue is a recurring monthly retainer, billed every month.
+  // 'fixed' — freelance / project clients: contractValue is ONE total fee for the whole
+  // engagement, which covers `durationMonths` months of service. It is billed once (on the
+  // start date), can be paid in instalments, and the client drops off the list once the
+  // service window is over and everything is settled.
+  billingType: { type: String, enum: ['monthly', 'fixed'], default: 'monthly' },
+  // Only used when billingType === 'fixed': how many months the one-time fee covers.
+  durationMonths: { type: Number, default: 0, min: 0 },
   contractValue: { type: Number, required: true, min: 0 },
   notes: { type: String, default: '' },
   accountManager: { type: String, default: '' },

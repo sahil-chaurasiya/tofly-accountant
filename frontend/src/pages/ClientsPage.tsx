@@ -18,23 +18,88 @@ const STATUS_OPTIONS = [
   { label: 'Partial', value: 'Partial' },
   { label: 'Paid', value: 'Paid' },
   { label: 'Upcoming', value: 'Upcoming' },
+  { label: 'Covered', value: 'Covered' },
   { label: 'Paused', value: 'Paused' },
   { label: 'Completed', value: 'Completed' },
 ];
 const WORK_STATUS_OPTIONS = ['', 'On Time', 'Delayed'];
 
+// Small badge marking a freelance / fixed-fee client.
+const FixedBadge = ({ months }: { months?: number }) => (
+  <span className="inline-flex items-center text-[10px] font-medium text-violet-600 bg-violet-50 border border-violet-200 rounded px-1.5 py-0.5 whitespace-nowrap">
+    Fixed{months ? ` · ${months} mo` : ''}
+  </span>
+);
+
+// "Month 2 of 6 · ends 09 Dec 2026" for a fixed-fee client in the selected month.
+const cycleText = (c: any) => {
+  if (!c?.cycle) return '';
+  const { position, total } = c.cycle;
+  const ends = c.serviceEndDate ? formatDate(c.serviceEndDate) : '';
+  if (position > total) return ends ? `Service ended ${ends}` : 'Service ended';
+  return `Month ${position} of ${total}${ends ? ` · ends ${ends}` : ''}`;
+};
+
+// Start date + n months − 1 day (day clamped for shorter months) — last day of service.
+const serviceEndFor = (startStr: string, months: number) => {
+  const [y, m, d] = startStr.split('T')[0].split('-').map(Number);
+  if (!y || !m || !d || !months) return null;
+  const t = new Date(y, m - 1 + months, 1);
+  const dim = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate();
+  const end = new Date(t.getFullYear(), t.getMonth(), Math.min(d, dim));
+  end.setDate(end.getDate() - 1);
+  return end;
+};
+
 // ─── Client Form Modal ────────────────────────────────────────────────────────
 const ClientForm = ({ initial, onSave, onClose }: { initial?: any; onSave: (f: any) => void; onClose: () => void }) => {
-  const [form, setForm] = useState(initial || { name: '', startDate: '', contractValue: '', notes: '', accountManager: '', workStatus: '' });
+  const [form, setForm] = useState(
+    initial
+      ? { ...initial, billingType: initial.billingType || 'monthly', durationMonths: initial.durationMonths || '' }
+      : { name: '', startDate: '', contractValue: '', notes: '', accountManager: '', workStatus: '', billingType: 'monthly', durationMonths: '' }
+  );
   const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }));
+  const isFixed = form.billingType === 'fixed';
+  const dur = Number(form.durationMonths);
+  const fee = Number(form.contractValue);
+  const serviceEnd = isFixed && form.startDate && dur > 0 ? serviceEndFor(form.startDate, dur) : null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
         <h2 className="text-lg font-bold mb-4">{initial ? 'Edit Client' : 'Add Client'}</h2>
         <div className="space-y-3">
           <div><label className="text-sm font-medium text-gray-700">Client Name *</label><input className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={form.name} onChange={e => set('name', e.target.value)} placeholder="Company name" /></div>
+          <div>
+            <label className="text-sm font-medium text-gray-700">Billing Type *</label>
+            <div className="mt-1 grid grid-cols-2 gap-1 bg-gray-100 rounded-lg p-1">
+              <button type="button" onClick={() => set('billingType', 'monthly')} className={`py-2 rounded-md text-sm font-medium transition ${!isFixed ? 'bg-white shadow-sm text-primary' : 'text-gray-500 hover:text-gray-700'}`}>Monthly Retainer</button>
+              <button type="button" onClick={() => set('billingType', 'fixed')} className={`py-2 rounded-md text-sm font-medium transition ${isFixed ? 'bg-white shadow-sm text-primary' : 'text-gray-500 hover:text-gray-700'}`}>Fixed Fee (one-time)</button>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              {isFixed
+                ? 'Freelance / project client — pays one total amount that covers a set number of months.'
+                : 'Pays the same amount every month for as long as the contract runs.'}
+            </p>
+          </div>
           <div><label className="text-sm font-medium text-gray-700">Start Date *</label><input type="date" className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={form.startDate?.split('T')[0] || ''} onChange={e => set('startDate', e.target.value)} /></div>
-          <div><label className="text-sm font-medium text-gray-700">Monthly Contract Value (₹) *</label><input type="number" className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={form.contractValue} onChange={e => set('contractValue', e.target.value)} placeholder="e.g. 15000" /></div>
+          <div><label className="text-sm font-medium text-gray-700">{isFixed ? 'Total Project Fee (₹) *' : 'Monthly Contract Value (₹) *'}</label><input type="number" className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={form.contractValue} onChange={e => set('contractValue', e.target.value)} placeholder={isFixed ? 'e.g. 60000' : 'e.g. 15000'} /></div>
+          {isFixed && (
+            <div>
+              <label className="text-sm font-medium text-gray-700">Service Duration (months) *</label>
+              <input type="number" min={1} className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={form.durationMonths} onChange={e => set('durationMonths', e.target.value)} placeholder="e.g. 6" />
+              <div className="flex gap-1.5 mt-2 flex-wrap">
+                {[1, 2, 3, 4, 6, 12].map(n => (
+                  <button key={n} type="button" onClick={() => set('durationMonths', n)} className={`px-2.5 py-1 rounded-md text-xs font-medium border transition ${dur === n ? 'bg-primary text-white border-primary' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>{n} mo</button>
+                ))}
+              </div>
+              {fee > 0 && dur > 0 && (
+                <div className="mt-2 bg-violet-50 border border-violet-100 rounded-lg px-3 py-2 text-xs text-violet-700 space-y-0.5">
+                  <div>≈ <span className="font-semibold">{formatCurrency(Math.round(fee / dur))}</span> per month · billed once, can be paid in instalments</div>
+                  {serviceEnd && <div>Service runs until <span className="font-semibold">{formatDate(serviceEnd)}</span></div>}
+                </div>
+              )}
+            </div>
+          )}
           <div><label className="text-sm font-medium text-gray-700">Account Manager</label><input className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={form.accountManager} onChange={e => set('accountManager', e.target.value)} placeholder="Manager name" /></div>
           <div><label className="text-sm font-medium text-gray-700">Notes</label><textarea className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" rows={3} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Service details..." /></div>
         </div>
@@ -130,6 +195,10 @@ const MonthlyPaymentModal = ({
   // Use this month's actual owed amount (respects any one-off override for
   // month/year), not the client's flat default.
   const cv = client.monthContractValue ?? client.contractValue;
+  // Fixed-fee clients: the first month shows the full fee, later months show what's still owed.
+  const contractLabel = client.billingType !== 'fixed'
+    ? 'Monthly contract'
+    : (cv === client.contractValue ? 'Fixed project fee' : 'Balance outstanding');
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
@@ -141,7 +210,7 @@ const MonthlyPaymentModal = ({
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded"><X className="w-4 h-4" /></button>
         </div>
         <div className="bg-gray-50 rounded-lg p-3 mb-4 text-sm">
-          <span className="text-gray-500">Monthly contract: </span>
+          <span className="text-gray-500">{contractLabel}: </span>
           <span className="font-semibold">{formatCurrency(cv)}</span>
         </div>
         <div className="space-y-3">
@@ -182,6 +251,7 @@ const STATUS_CFG = {
   Upcoming:   { dot: 'bg-blue-300',    text: 'text-blue-500',    bg: 'bg-blue-50',    border: 'border-blue-200',    label: 'Not Due Yet' },
   Paused:     { dot: 'bg-gray-400',    text: 'text-gray-500',    bg: 'bg-gray-100',   border: 'border-gray-300',    label: 'Paused'      },
   Completed:  { dot: 'bg-slate-400',   text: 'text-slate-500',   bg: 'bg-slate-100',  border: 'border-slate-300',   label: 'Completed'   },
+  Covered:    { dot: 'bg-teal-400',    text: 'text-teal-600',    bg: 'bg-teal-50',    border: 'border-teal-200',    label: 'Covered'     },
 };
 
 // The statuses where there's genuinely no month to record a payment against:
@@ -346,7 +416,12 @@ export default function ClientsPage() {
   const updatePayment = useMutation({ mutationFn: ({ id, d }: any) => paymentsApi.update(id, d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['clients'] }); setPayModal(null); } });
 
   const handleSaveClient = (form: any) => {
-    const data = { ...form, contractValue: Number(form.contractValue) };
+    const isFixed = form.billingType === 'fixed';
+    if (isFixed && !(Number(form.durationMonths) >= 1)) {
+      alert('Enter how many months the fixed fee covers (at least 1).');
+      return;
+    }
+    const data = { ...form, contractValue: Number(form.contractValue), billingType: form.billingType || 'monthly', durationMonths: isFixed ? Number(form.durationMonths) : 0 };
     if (clientModal && typeof clientModal === 'object') updateClient.mutate({ id: (clientModal as Client)._id, data });
     else createClient.mutate(data);
   };
@@ -446,6 +521,7 @@ export default function ClientsPage() {
                 <div>
                   <div className="flex items-center gap-1.5">
                     <h3 className="font-semibold text-gray-900">{client.name}</h3>
+                    {client.billingType === 'fixed' && <FixedBadge months={client.durationMonths} />}
                     {client.endDate ? (
                       <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5"><CheckCircle2 className="w-2.5 h-2.5" /> Completed</span>
                     ) : client.isActive === false && (
@@ -453,6 +529,7 @@ export default function ClientsPage() {
                     )}
                   </div>
                   <p className="text-xs text-gray-400 mt-0.5">Since {formatDate(client.startDate)}</p>
+                  {client.billingType === 'fixed' && cycleText(client) && <p className="text-xs text-violet-500 mt-0.5">{cycleText(client)}</p>}
                   {client.accountManager && <p className="text-xs text-gray-500 mt-0.5">👤 {client.accountManager}</p>}
                 </div>
               </div>
@@ -461,10 +538,11 @@ export default function ClientsPage() {
 
             <div className="space-y-1.5 mb-3">
               <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-500">Monthly {monthValue !== client.contractValue && <span className="text-amber-500 font-medium">(custom)</span>}</span>
+                <span className="text-gray-500">{client.billingType === 'fixed' ? 'Fixed fee' : 'Monthly'} {client.billingType !== 'fixed' && monthValue !== client.contractValue && <span className="text-amber-500 font-medium">(custom)</span>}</span>
                 <span className="flex items-center gap-1.5">
-                  <span className="font-medium">{formatCurrency(monthValue)}</span>
-                  {!client.endDate && (
+                  <span className="font-medium">{formatCurrency(client.billingType === 'fixed' ? client.contractValue : monthValue)}</span>
+                  {client.billingType === 'fixed' && <span className="text-xs text-gray-400">· one-time</span>}
+                  {!client.endDate && client.billingType !== 'fixed' && (
                     <button onClick={() => setValueModal(client)} title="Set this month's contract value" className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-primary"><IndianRupee className="w-3 h-3" /></button>
                   )}
                 </span>
@@ -498,6 +576,7 @@ export default function ClientsPage() {
                 {mStatus === 'NotStarted' && <span className="text-xs text-gray-400 font-medium">Contract not started yet</span>}
                 {mStatus === 'Upcoming' && <span className="text-xs text-blue-500 font-medium">Due {client.dueDate ? formatDate(client.dueDate) : 'later this month'}</span>}
                 {mStatus === 'Paused' && <span className="text-xs text-gray-500 font-medium">⏸ Paused — not billed</span>}
+                {mStatus === 'Covered' && <span className="text-xs text-teal-600 font-medium">✓ Covered by project fee</span>}
               </div>
               {mStatus === 'Partial' && <p className="text-xs text-gray-400">Remaining: {formatCurrency(remaining)}</p>}
               {payment && <p className="text-xs text-gray-400 mt-0.5">Paid on {formatDate(payment.paymentDate)} · {payment.paymentMethod}</p>}
@@ -522,11 +601,13 @@ export default function ClientsPage() {
                 ><RotateCcw className="w-3 h-3" /></button>
               ) : (
                 <>
-                  <button
-                    onClick={() => handleTogglePause(client)}
-                    title={client.isActive === false ? 'Resume client' : 'Pause client'}
-                    className={`flex items-center justify-center px-3 border rounded-lg py-1.5 text-xs ${client.isActive === false ? 'border-emerald-200 text-emerald-600 hover:bg-emerald-50' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
-                  >{client.isActive === false ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}</button>
+                  {client.billingType !== 'fixed' && (
+                    <button
+                      onClick={() => handleTogglePause(client)}
+                      title={client.isActive === false ? 'Resume client' : 'Pause client'}
+                      className={`flex items-center justify-center px-3 border rounded-lg py-1.5 text-xs ${client.isActive === false ? 'border-emerald-200 text-emerald-600 hover:bg-emerald-50' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                    >{client.isActive === false ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}</button>
+                  )}
                   <button
                     onClick={() => setCompleteModal(client)}
                     title="Mark contract complete"
@@ -552,7 +633,7 @@ export default function ClientsPage() {
               <th className="w-8 px-3 py-3" />
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Client</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Since</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Monthly</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Contract</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">All-time Received</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">{MONTHS[selMonth - 1]} {selYear} — Paid</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">{MONTHS[selMonth - 1]} — Remaining</th>
@@ -583,23 +664,32 @@ export default function ClientsPage() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1.5">
                       <div className="font-medium text-gray-900">{client.name}</div>
+                      {client.billingType === 'fixed' && <FixedBadge months={client.durationMonths} />}
                       {client.endDate ? (
                         <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5"><CheckCircle2 className="w-2.5 h-2.5" /> Completed</span>
                       ) : client.isActive === false && (
                         <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-500 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5"><Pause className="w-2.5 h-2.5" /> Paused</span>
                       )}
                     </div>
+                    {client.billingType === 'fixed' && cycleText(client) && <div className="text-xs text-violet-500 whitespace-nowrap">{cycleText(client)}</div>}
                     {client.notes && <div className="text-xs text-gray-400 truncate max-w-[160px]">{client.notes}</div>}
                   </td>
                   <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(client.startDate)}</td>
                   <td className="px-4 py-3 font-medium whitespace-nowrap">
-                    <span className="flex items-center gap-1.5">
-                      {formatCurrency(monthValue)}
-                      {monthValue !== client.contractValue && <span className="text-[10px] text-amber-500 font-semibold">custom</span>}
-                      {!client.endDate && (
-                        <button onClick={() => setValueModal(client)} title="Set this month's contract value" className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-primary"><IndianRupee className="w-3 h-3" /></button>
-                      )}
-                    </span>
+                    {client.billingType === 'fixed' ? (
+                      <div>
+                        <div>{formatCurrency(client.contractValue)}</div>
+                        <div className="text-[10px] text-gray-400 font-normal">one-time · {client.durationMonths} mo</div>
+                      </div>
+                    ) : (
+                      <span className="flex items-center gap-1.5">
+                        {formatCurrency(monthValue)}
+                        {monthValue !== client.contractValue && <span className="text-[10px] text-amber-500 font-semibold">custom</span>}
+                        {!client.endDate && (
+                          <button onClick={() => setValueModal(client)} title="Set this month's contract value" className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-primary"><IndianRupee className="w-3 h-3" /></button>
+                        )}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 font-medium text-emerald-600 whitespace-nowrap">{formatCurrency(client.receivedAmount ?? 0)}</td>
                   <td className="px-4 py-3 font-semibold whitespace-nowrap">
@@ -618,7 +708,9 @@ export default function ClientsPage() {
                               ? <span className="text-xs text-gray-400 font-medium">⏸ Paused</span>
                               : mStatus === 'Completed'
                                 ? <span className="text-xs text-slate-400 font-medium">✓ Completed</span>
-                                : <span className="text-red-500 font-semibold">{formatCurrency(monthValue)}</span>}
+                                : mStatus === 'Covered'
+                                  ? <span className="text-xs text-teal-500 font-medium">✓ Covered</span>
+                                  : <span className="text-red-500 font-semibold">{formatCurrency(monthValue)}</span>}
                   </td>
 
                   {/* Month Status — compact interactive dropdown */}
@@ -670,11 +762,13 @@ export default function ClientsPage() {
                         ><RotateCcw className="w-3.5 h-3.5" /></button>
                       ) : (
                         <>
-                          <button
-                            onClick={() => handleTogglePause(client)}
-                            title={client.isActive === false ? 'Resume client' : 'Pause client'}
-                            className={`p-1.5 rounded hover:bg-gray-100 ${client.isActive === false ? 'text-emerald-500' : 'text-gray-500'}`}
-                          >{client.isActive === false ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}</button>
+                          {client.billingType !== 'fixed' && (
+                            <button
+                              onClick={() => handleTogglePause(client)}
+                              title={client.isActive === false ? 'Resume client' : 'Pause client'}
+                              className={`p-1.5 rounded hover:bg-gray-100 ${client.isActive === false ? 'text-emerald-500' : 'text-gray-500'}`}
+                            >{client.isActive === false ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}</button>
+                          )}
                           <button
                             onClick={() => setCompleteModal(client)}
                             title="Mark contract complete"

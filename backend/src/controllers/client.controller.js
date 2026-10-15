@@ -42,6 +42,113 @@ const contractValueFor = (defaultValue, overrides, year, month) => {
   return override ? override.value : defaultValue;
 };
 
+// ─── Fixed-fee (freelance / project) clients ───────────────────────────────
+// A 'fixed' client pays ONE total (`contractValue`) for `durationMonths` months of
+// service instead of a recurring monthly amount. The fee is billed once, on the
+// start date, and may be paid in instalments across any months. For every month we
+// therefore work out the BALANCE still owed going into it (fee minus everything paid
+// in earlier months) — that balance is what the month "owes", so the usual
+// Paid / Partial / Unpaid logic and every total built on it keeps working.
+const isFixed = (client) => client && client.billingType === 'fixed';
+const monthIndex = (year, month /* 1-12 */) => year * 12 + (month - 1);
+const sumAmounts = (list) => list.reduce((s, p) => s + p.amount, 0);
+
+// Index of the last calendar month the service window covers.
+const fixedWindowEndIdx = (client) => {
+  const s = new Date(client.startDate);
+  return monthIndex(s.getFullYear(), s.getMonth() + 1) + Math.max(1, client.durationMonths || 1) - 1;
+};
+
+// Add n months, clamping the day to the last day of shorter months.
+const addMonthsClamped = (d, n) => {
+  const t = new Date(d.getFullYear(), d.getMonth() + n, 1);
+  const dim = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate();
+  return new Date(t.getFullYear(), t.getMonth(), Math.min(d.getDate(), dim));
+};
+
+// Last day of service: start date + durationMonths, minus one day.
+const fixedServiceEndDate = (client) => {
+  const e = addMonthsClamped(new Date(client.startDate), Math.max(1, client.durationMonths || 1));
+  e.setDate(e.getDate() - 1);
+  return e;
+};
+
+// What a fixed client still owes going INTO (year, month): the total fee minus
+// everything paid in earlier months. Months before the start owe nothing.
+const fixedMonthValue = (client, payments, year, month) => {
+  const s = new Date(client.startDate);
+  const idx = monthIndex(year, month);
+  if (idx < monthIndex(s.getFullYear(), s.getMonth() + 1)) return 0;
+  const paidBefore = sumAmounts((payments || []).filter(p => monthIndex(p.year, p.month) < idx));
+  return Math.max(0, client.contractValue - paidBefore);
+};
+
+// Where (year, month) sits in a fixed client's service window.
+const fixedCycleInfo = (client, year, month) => {
+  const s = new Date(client.startDate);
+  const startIdx = monthIndex(s.getFullYear(), s.getMonth() + 1);
+  const idx = monthIndex(year, month);
+  const total = Math.max(1, client.durationMonths || 1);
+  return {
+    position: idx - startIdx + 1,           // 1 = first month of service
+    total,
+    isBillingMonth: idx === startIdx,
+    inWindow: idx >= startIdx && idx <= fixedWindowEndIdx(client),
+  };
+};
+
+// Has a fixed client's service window ended AND been fully settled by this month?
+// (If money is still owed they stay visible — a finished project with an unpaid
+// balance must not silently vanish.)
+const fixedFullyDoneByMonth = (client, payments, year, month) =>
+  monthIndex(year, month) > fixedWindowEndIdx(client) && fixedMonthValue(client, payments, year, month) === 0;
+
+// The amount a client is expected to owe for (year, month), for monthly OR fixed clients.
+const monthExpectedValue = (client, clientPayments, year, month) =>
+  isFixed(client)
+    ? fixedMonthValue(client, clientPayments, year, month)
+    : contractValueFor(client.contractValue, client.contractValueOverrides, year, month);
+
+// Month-by-month ledger for a fixed client. Every row's `contractValue` is the
+// balance carried into that month (the full fee in the billing month).
+const buildFixedLedger = (client, payments) => {
+  const start = new Date(client.startDate);
+  const now = new Date();
+  const end = client.endDate ? new Date(client.endDate) : null;
+  const limit = (end && end < now) ? end : now;
+  const startIdx = monthIndex(start.getFullYear(), start.getMonth() + 1);
+  const limitIdx = monthIndex(limit.getFullYear(), limit.getMonth() + 1);
+  const windowEndIdx = fixedWindowEndIdx(client);
+  const notDueYet = now < start;
+
+  const rows = [];
+  for (let idx = startIdx; idx <= limitIdx; idx++) {
+    const y = Math.floor(idx / 12);
+    const m = (idx % 12) + 1;
+    const monthPayments = (payments || []).filter(p => p.year === y && p.month === m);
+    const totalPaid = sumAmounts(monthPayments);
+    const monthValue = fixedMonthValue(client, payments, y, m);
+    // Past the service window, only keep months that still matter.
+    if (idx > windowEndIdx && monthValue === 0 && monthPayments.length === 0) continue;
+
+    let status;
+    if (monthValue === 0) status = totalPaid > 0 ? 'Paid' : 'Covered';
+    else if (totalPaid >= monthValue) status = 'Paid';
+    else if (totalPaid > 0) status = 'Partial';
+    else if (notDueYet) status = 'Upcoming';
+    else status = 'Unpaid';
+
+    const billable = status !== 'Upcoming';
+    const remaining = (status === 'Unpaid' || status === 'Partial') ? Math.max(0, monthValue - totalPaid) : 0;
+    rows.push({
+      month: m, year: y, contractValue: monthValue, totalPaid, remaining, status,
+      dueDate: start, billable, payments: monthPayments,
+      ...fixedCycleInfo(client, y, m),
+    });
+  }
+  return rows.reverse();
+};
+
 // Build month-by-month ledger from contract start to today.
 // Each month's status is decided by, in priority order:
 //   1. Was it actually paid (fully/partially)? Money collected always counts,
@@ -100,6 +207,13 @@ const buildMonthLedger = (startDate, contractValue, payments, pauseHistory, endD
 
 // Totals used by the dashboard/detail views — pause- and due-date-aware.
 const computeClientTotals = (client, payments) => {
+  if (isFixed(client)) {
+    const ledger = buildFixedLedger(client, payments);
+    const totalReceived = sumAmounts(payments);
+    // The one-time fee is owed from the start date (or sooner, if money already came in).
+    const billed = (new Date() >= new Date(client.startDate) || totalReceived > 0) ? client.contractValue : 0;
+    return { ledger, totalReceived, totalDue: billed, pendingAmount: Math.max(0, billed - totalReceived) };
+  }
   const ledger = buildMonthLedger(client.startDate, client.contractValue, payments, client.pauseHistory, client.endDate, client.contractValueOverrides);
   const totalReceived = payments.reduce((s, p) => s + p.amount, 0);
   const totalDue = ledger.filter(m => m.billable).reduce((s, m) => s + m.contractValue, 0);
@@ -120,16 +234,25 @@ const getClientWithStats = async (client, targetMonth, targetYear) => {
   const startYear  = start.getFullYear();
   const hasStarted = curYear > startYear || (curYear === startYear && curMonth >= startMonth);
 
-  const dueDate   = hasStarted ? billingDateFor(start, curYear, curMonth) : null;
+  const fixed     = isFixed(client);
+  // Fixed-fee clients are billed once, on their start date — never monthly, and
+  // pausing doesn't apply to them.
+  const dueDate   = hasStarted ? (fixed ? start : billingDateFor(start, curYear, curMonth)) : null;
   const notDueYet = hasStarted && now < dueDate;
-  const paused    = hasStarted && isPausedOn(dueDate, client.pauseHistory);
+  const paused    = !fixed && hasStarted && isPausedOn(dueDate, client.pauseHistory);
   // Has the contract's end date already passed by the selected month? (the
   // end month itself still bills normally — only months strictly after it
   // are cut off.)
-  const ended     = hasStarted && hasEndedByMonth(client.endDate, curYear, curMonth);
+  const ended     = hasStarted && (
+    hasEndedByMonth(client.endDate, curYear, curMonth) ||
+    (fixed && fixedFullyDoneByMonth(client, payments, curYear, curMonth))
+  );
   // What's actually owed for the selected month — a one-off override if one
   // was set for it, otherwise the client's normal monthly value.
-  const monthContractValue = contractValueFor(client.contractValue, client.contractValueOverrides, curYear, curMonth);
+  // (Fixed-fee clients: the balance still owed going into the selected month.)
+  const monthContractValue = fixed
+    ? fixedMonthValue(client, payments, curYear, curMonth)
+    : contractValueFor(client.contractValue, client.contractValueOverrides, curYear, curMonth);
 
   // Selected month stats — clients that hadn't started yet, or whose contract
   // had already ended, in the selected month have no obligation for that
@@ -140,6 +263,9 @@ const getClientWithStats = async (client, targetMonth, targetYear) => {
   let status = 'Unpaid';
   if (!hasStarted) status = 'NotStarted';
   else if (ended) status = 'Completed';
+  // Fixed client with nothing owed going into this month: the service is simply
+  // running, already covered by what was paid earlier.
+  else if (fixed && monthContractValue === 0) status = selPaid > 0 ? 'Paid' : 'Covered';
   else if (selPaid >= monthContractValue) status = 'Paid';
   else if (selPaid > 0) status = 'Partial';
   else if (paused) status = 'Paused';
@@ -162,6 +288,10 @@ const getClientWithStats = async (client, targetMonth, targetYear) => {
     // one-off override) — use this instead of `contractValue` whenever
     // displaying/computing anything tied to the selected month.
     monthContractValue,
+    // Fixed-fee clients only: where the selected month sits in the service window
+    // (position / total, isBillingMonth, inWindow) and the last day of service.
+    cycle: fixed ? fixedCycleInfo(client, curYear, curMonth) : null,
+    serviceEndDate: fixed ? fixedServiceEndDate(client) : null,
     selPaid,
     selRemaining,
     selPayment: selPayments[0] || null,
@@ -207,9 +337,20 @@ exports.getClient = async (req, res) => {
   }
 };
 
+// Keep billingType and durationMonths consistent: a fixed client needs a whole
+// number of months (min 1); a monthly client has no duration.
+const normaliseBilling = (body) => {
+  if (body.billingType === 'fixed') {
+    body.durationMonths = Math.max(1, Math.floor(Number(body.durationMonths) || 1));
+  } else if (body.billingType === 'monthly') {
+    body.durationMonths = 0;
+  }
+};
+
 exports.createClient = async (req, res) => {
   try {
     const body = { ...req.body };
+    normaliseBilling(body);
     // isActive/pauseHistory are managed exclusively through the pause/resume
     // endpoints so history entries can't get out of sync.
     delete body.isActive;
@@ -229,6 +370,7 @@ exports.createClient = async (req, res) => {
 exports.updateClient = async (req, res) => {
   try {
     const body = { ...req.body };
+    normaliseBilling(body);
     delete body.isActive;
     delete body.pauseHistory;
     delete body.endDate;
@@ -247,6 +389,7 @@ exports.pauseClient = async (req, res) => {
   try {
     const client = await Client.findById(req.params.id);
     if (!client) return res.status(404).json({ message: 'Client not found' });
+    if (isFixed(client)) return res.status(400).json({ message: 'Fixed-fee clients are billed once and cannot be paused — mark them complete instead' });
     if (client.isActive === false) return res.status(400).json({ message: 'Client is already paused' });
 
     const pausedAt = req.body.pausedAt ? new Date(req.body.pausedAt) : new Date();
@@ -387,3 +530,6 @@ exports.computeClientTotals = computeClientTotals;
 exports.buildMonthLedger = buildMonthLedger;
 exports.hasEndedByMonth = hasEndedByMonth;
 exports.contractValueFor = contractValueFor;
+exports.isFixed = isFixed;
+exports.monthExpectedValue = monthExpectedValue;
+exports.fixedMonthValue = fixedMonthValue;
