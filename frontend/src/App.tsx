@@ -7,6 +7,8 @@ import ClientsPage from './pages/ClientsPage';
 import ClientDetailPage from './pages/ClientDetailPage';
 import PaymentsPage from './pages/PaymentsPage';
 import SalariesPage from './pages/SalariesPage';
+import FreelancersPage from './pages/FreelancersPage';
+import FreelancerDetailPage from './pages/FreelancerDetailPage';
 import ExpensesPage from './pages/ExpensesPage';
 import EMIPage from './pages/EMIPage';
 import AccountingPage from './pages/AccountingPage';
@@ -32,6 +34,8 @@ function AppRoutes() {
         <Route path="clients/:id" element={<ClientDetailPage />} />
         <Route path="payments" element={<PaymentsPage />} />
         <Route path="salaries" element={<SalariesPage />} />
+        <Route path="freelancers" element={<FreelancersPage />} />
+        <Route path="freelancers/:id" element={<FreelancerDetailPage />} />
         <Route path="expenses" element={<ExpensesPage />} />
         <Route path="emi" element={<EMIPage />} />
         <Route path="accounting" element={<AccountingPage />} />

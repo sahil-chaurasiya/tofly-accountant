@@ -142,6 +142,7 @@ export interface MonthlyAccounting {
   salaryExpenses: number;
   officeExpenses: number;
   emiExpenses: number;
+  freelancerExpenses?: number;
   totalExpenses: number;
   closingBalance: number;
   notes?: string;
@@ -158,6 +159,7 @@ export interface DashboardData {
     currentMonthExpenses: number;
     salaryExpense: number;
     emiExpense: number;
+    freelancerExpense?: number;
     netProfit: number;
   };
   topPendingClients: Array<{ _id: string; name: string; pendingAmount: number }>;
@@ -191,4 +193,104 @@ export interface CompanySettings {
   ifsc: string;
   branch: string;
   upi: string;
+}
+
+// ---------------------------------------------------------------------------
+// Freelancers — people hired per job (photographer, editor, designer, ...)
+// ---------------------------------------------------------------------------
+export type FreelancerJobStatus = 'Planned' | 'In Progress' | 'Completed' | 'Cancelled';
+export type FreelancerRateType = 'Fixed' | 'Hourly' | 'Daily' | 'Per Unit';
+export type FreelancerPaymentStatus = 'Unpaid' | 'Partial' | 'Paid' | 'Overpaid' | 'Closed';
+
+export interface FreelancerStats {
+  jobCount: number;
+  activeJobs: number;
+  completedJobs: number;
+  totalPayable: number;
+  totalPaid: number;
+  totalPending: number;
+  // Pending on jobs that are already completed = owed right now.
+  payableNow: number;
+  avgRating: number | null;
+  ratedJobs: number;
+  onTimeRate: number | null;
+  lastPaidOn: string | null;
+}
+
+export interface Freelancer {
+  _id: string;
+  name: string;
+  role: string;
+  phone: string;
+  email: string;
+  city: string;
+  upiId: string;
+  bankDetails: string;
+  notes: string;
+  isActive: boolean;
+  createdAt: string;
+  stats?: FreelancerStats;
+}
+
+export interface FreelancerPayment {
+  _id: string;
+  freelancerId: string | { _id: string; name: string; role?: string } | null;
+  jobId: string | { _id: string; title: string } | null;
+  jobTitle?: string;
+  amount: number;
+  paymentDate: string;
+  paymentMethod: 'Bank Transfer' | 'Cash' | 'UPI' | 'Cheque' | 'Online';
+  paymentType: 'Advance' | 'Part Payment' | 'Final Payment';
+  reference: string;
+  remarks: string;
+}
+
+export interface FreelancerJob {
+  _id: string;
+  freelancerId: string | { _id: string; name: string; role?: string };
+  title: string;
+  description: string;
+  clientId?: string | null;
+  clientName: string;
+  startDate?: string | null;
+  dueDate?: string | null;
+  completedDate?: string | null;
+  rateType: FreelancerRateType;
+  rate: number;
+  quantity: number;
+  unitLabel: string;
+  agreedAmount: number;
+  extraCharges: number;
+  extraChargesNote: string;
+  status: FreelancerJobStatus;
+  workStatus: 'On Time' | 'Delayed' | '';
+  rating: number;
+  feedback: string;
+  // Computed by the server
+  payable: number;
+  paid: number;
+  pending: number;
+  paymentStatus: FreelancerPaymentStatus;
+  lastPaymentDate: string | null;
+  payments: FreelancerPayment[];
+}
+
+export interface FreelancerDetail extends Freelancer {
+  stats: FreelancerStats;
+  jobs: FreelancerJob[];
+  payments: FreelancerPayment[];
+}
+
+export interface FreelancerMonthlySummary {
+  month: number;
+  year: number;
+  totalPaid: number;
+  paymentCount: number;
+  freelancersPaid: number;
+  byFreelancer: Array<{ freelancerId: string | null; name: string; role: string; paid: number; count: number }>;
+  payments: FreelancerPayment[];
+  payableNow: number;
+  committed: number;
+  activeJobs: number;
+  dueJobs: Array<{ _id: string; title: string; pending: number; paymentStatus: FreelancerPaymentStatus; freelancerId: string | null; freelancerName: string }>;
 }

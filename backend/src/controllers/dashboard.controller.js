@@ -5,6 +5,7 @@ const Expense = require('../models/Expense');
 const EMIPayment = require('../models/EMIPayment');
 const Loan = require('../models/Loan');
 const Employee = require('../models/Employee');
+const FreelancerPayment = require('../models/FreelancerPayment');
 const { computeClientTotals, hasEndedByMonth, monthExpectedValue } = require('./client.controller');
 
 exports.getDashboard = async (req, res) => {
@@ -15,7 +16,7 @@ exports.getDashboard = async (req, res) => {
     const monthStart = new Date(year, month - 1, 1);
     const monthEnd = new Date(year, month, 0, 23, 59, 59);
 
-    const [clients, allPayments, currentMonthPayments, employees, currentSalaries, currentExpenses, currentEMI, activeLoans] = await Promise.all([
+    const [clients, allPayments, currentMonthPayments, employees, currentSalaries, currentExpenses, currentEMI, activeLoans, currentFreelancerPays] = await Promise.all([
       Client.find(),
       Payment.find(),
       Payment.find({ paymentDate: { $gte: monthStart, $lte: monthEnd } }),
@@ -24,6 +25,7 @@ exports.getDashboard = async (req, res) => {
       Expense.find({ expenseDate: { $gte: monthStart, $lte: monthEnd } }),
       EMIPayment.find({ paymentDate: { $gte: monthStart, $lte: monthEnd } }),
       Loan.find({ status: 'Active' }),
+      FreelancerPayment.find({ paymentDate: { $gte: monthStart, $lte: monthEnd } }),
     ]);
 
     // Paused clients aren't currently accruing dues, and clients whose
@@ -39,7 +41,8 @@ exports.getDashboard = async (req, res) => {
     const salaryExpense = currentSalaries.reduce((sum, s) => sum + s.amountPaid, 0);
     const officeExpense = currentExpenses.reduce((sum, e) => sum + e.amount, 0);
     const emiExpense = currentEMI.reduce((sum, e) => sum + e.amount, 0);
-    const currentMonthExpenses = salaryExpense + officeExpense + emiExpense;
+    const freelancerExpense = currentFreelancerPays.reduce((sum, f) => sum + f.amount, 0);
+    const currentMonthExpenses = salaryExpense + officeExpense + emiExpense + freelancerExpense;
     const netProfit = currentMonthRevenue - currentMonthExpenses;
 
     // Top pending clients — pause/due-date aware, so paused clients don't
@@ -62,15 +65,16 @@ exports.getDashboard = async (req, res) => {
       const exps = await Expense.find({ expenseDate: { $gte: start, $lte: end } });
       const emis = await EMIPayment.find({ paymentDate: { $gte: start, $lte: end } });
       const sals = await SalaryPayment.find({ month: m2, year: y2, status: 'Paid' });
+      const frees = await FreelancerPayment.find({ paymentDate: { $gte: start, $lte: end } });
       const income = pays.reduce((s, p) => s + p.amount, 0);
-      const expense = exps.reduce((s, e) => s + e.amount, 0) + emis.reduce((s, e) => s + e.amount, 0) + sals.reduce((s, s2) => s + s2.amountPaid, 0);
+      const expense = exps.reduce((s, e) => s + e.amount, 0) + emis.reduce((s, e) => s + e.amount, 0) + sals.reduce((s, s2) => s + s2.amountPaid, 0) + frees.reduce((s, f) => s + f.amount, 0);
       revenueTrend.push({ month: `${d.toLocaleString('default', { month: 'short' })} ${y2}`, income, expense, profit: income - expense });
     }
 
     res.json({
       month,
       year,
-      cards: { totalContractValue, totalCollected, totalPending, currentMonthRevenue, currentMonthExpenses, salaryExpense, emiExpense, netProfit },
+      cards: { totalContractValue, totalCollected, totalPending, currentMonthRevenue, currentMonthExpenses, salaryExpense, emiExpense, freelancerExpense, netProfit },
       topPendingClients,
       revenueTrend,
     });

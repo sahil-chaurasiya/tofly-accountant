@@ -44,7 +44,8 @@ export default function AccountingPage() {
   const salExp = summary?.salaryExpenses || 0;
   const offExp = summary?.officeExpenses || 0;
   const emiExp = summary?.emiExpenses || 0;
-  const totalExp = salExp + offExp + emiExp;
+  const flExp = summary?.freelancerExpenses || 0;
+  const totalExp = salExp + offExp + emiExp + flExp;
   const closing = ob + income - totalExp - ra;
 
   const handleSave = () => {
@@ -113,6 +114,7 @@ export default function AccountingPage() {
               <Row label="− Salary Expenses" value={salExp} color="text-red-500" />
               <Row label="− Office Expenses" value={offExp} color="text-red-500" />
               <Row label="− EMI Payments" value={emiExp} color="text-red-500" />
+              <Row label="− Freelancer Payments" value={flExp} color="text-red-500" />
               <Row label="− Reserved Amount" value={ra} color="text-amber-600" />
 
               <div className={`flex justify-between items-center pt-3 mt-2 border-t-2 ${closing >= 0 ? 'border-emerald-300' : 'border-red-300'}`}>

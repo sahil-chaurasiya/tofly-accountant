@@ -9,6 +9,7 @@ const REPORT_TYPES = [
   { value: 'expense', label: 'Expense Report', desc: 'All office expenses in period' },
   { value: 'profit', label: 'Profit Report', desc: 'P&L summary for period' },
   { value: 'collection', label: 'Collection Report', desc: 'Collection status per client' },
+  { value: 'freelancer', label: 'Freelancer Report', desc: 'All freelancer payments in period' },
 ];
 
 export default function ReportsPage() {
@@ -36,7 +37,9 @@ export default function ReportsPage() {
     } else if (reportType === 'expense' && data.expenses) {
       rows = ['Title,Category,Amount,Date,Remarks', ...data.expenses.map((e: any) => `"${e.title}",${e.category},${e.amount},${formatDate(e.expenseDate)},"${e.remarks}"`)];
     } else if (reportType === 'profit') {
-      rows = ['Metric,Amount', `Income,${data.income}`, `Office Expenses,${data.expenseTotal}`, `Salary,${data.salaryTotal}`, `EMI,${data.emiTotal}`, `Net Profit,${data.profit}`];
+      rows = ['Metric,Amount', `Income,${data.income}`, `Office Expenses,${data.expenseTotal}`, `Salary,${data.salaryTotal}`, `EMI,${data.emiTotal}`, `Freelancers,${data.freelancerTotal || 0}`, `Net Profit,${data.profit}`];
+    } else if (reportType === 'freelancer' && data.freelancerPayments) {
+      rows = ['Freelancer,Job,Type,Method,Amount,Date,Reference', ...data.freelancerPayments.map((p: any) => `"${p.freelancerId?.name || ''}","${p.jobId?.title || ''}",${p.paymentType},${p.paymentMethod},${p.amount},${formatDate(p.paymentDate)},"${p.reference || ''}"`)];
     } else if (reportType === 'collection' && data.collection) {
       rows = ['Client,Contract Value,Collected', ...data.collection.map((c: any) => `"${c.clientName}",${c.contractValue},${c.collected}`)];
     }
@@ -131,6 +134,7 @@ export default function ReportsPage() {
                     { label: 'Office Expenses', value: -data.expenseTotal, color: 'text-red-500' },
                     { label: 'Salary Expenses', value: -data.salaryTotal, color: 'text-red-500' },
                     { label: 'EMI Payments', value: -data.emiTotal, color: 'text-red-500' },
+                    { label: 'Freelancer Payments', value: -(data.freelancerTotal || 0), color: 'text-red-500' },
                   ].map(row => (
                     <div key={row.label} className="flex justify-between py-3 border-b text-sm">
                       <span className="text-gray-600">{row.label}</span>
@@ -141,6 +145,20 @@ export default function ReportsPage() {
                     <span className="font-bold text-lg">Net Profit</span>
                     <span className={`font-bold text-2xl ${data.profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{formatCurrency(data.profit)}</span>
                   </div>
+                </div>
+              )}
+
+              {/* Freelancer */}
+              {reportType === 'freelancer' && data.freelancerPayments && (
+                <div>
+                  <div className="mb-4 p-4 bg-red-50 rounded-lg">
+                    <p className="text-sm text-red-600">Total Paid to Freelancers</p>
+                    <p className="text-2xl font-bold text-red-700">{formatCurrency(data.total)}</p>
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead><tr className="border-b">{['Freelancer', 'Job', 'Type', 'Amount', 'Date', 'Method'].map(h => <th key={h} className="text-left py-2 px-3 text-xs text-gray-500 uppercase">{h}</th>)}</tr></thead>
+                    <tbody>{data.freelancerPayments.map((p: any) => <tr key={p._id} className="border-b hover:bg-gray-50"><td className="py-2.5 px-3 font-medium">{p.freelancerId?.name || 'Unknown'}</td><td className="py-2.5 px-3 text-gray-600">{p.jobId?.title || '—'}</td><td className="py-2.5 px-3"><span className="bg-indigo-50 text-indigo-600 text-xs px-2 py-0.5 rounded">{p.paymentType}</span></td><td className="py-2.5 px-3 text-red-500 font-medium">{formatCurrency(p.amount)}</td><td className="py-2.5 px-3 text-gray-400">{formatDate(p.paymentDate)}</td><td className="py-2.5 px-3"><span className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded">{p.paymentMethod}</span></td></tr>)}</tbody>
+                  </table>
                 </div>
               )}
 

@@ -117,6 +117,26 @@ export const servicesApi = {
   delete: (id: string) => api.delete(`/services/${id}`),
 };
 
+// Freelancers — people hired per job: their jobs, and what we paid them
+export const freelancersApi = {
+  getAll: () => api.get('/freelancers'),
+  getOne: (id: string) => api.get(`/freelancers/${id}`),
+  create: (data: any) => api.post('/freelancers', data),
+  update: (id: string, data: any) => api.put(`/freelancers/${id}`, data),
+  delete: (id: string) => api.delete(`/freelancers/${id}`),
+  getMonthlySummary: (month: number, year: number) => api.get(`/freelancers/summary/${month}/${year}`),
+  // Jobs
+  getJobs: (params?: any) => api.get('/freelancers/jobs', { params }),
+  createJob: (data: any) => api.post('/freelancers/jobs', data),
+  updateJob: (id: string, data: any) => api.put(`/freelancers/jobs/${id}`, data),
+  deleteJob: (id: string) => api.delete(`/freelancers/jobs/${id}`),
+  // Payments
+  getPayments: (params?: any) => api.get('/freelancers/payments', { params }),
+  createPayment: (data: any) => api.post('/freelancers/payments', data),
+  updatePayment: (id: string, data: any) => api.put(`/freelancers/payments/${id}`, data),
+  deletePayment: (id: string) => api.delete(`/freelancers/payments/${id}`),
+};
+
 export default api;
 
 // Company Settings

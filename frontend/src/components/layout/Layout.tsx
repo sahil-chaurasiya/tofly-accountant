@@ -4,7 +4,7 @@ import { useState } from 'react';
 import {
   LayoutDashboard, Users, CreditCard, Wallet, Receipt,
   TrendingDown, BookOpen, BarChart3, Settings, LogOut,
-  Menu, X, FileText
+  Menu, X, FileText, Briefcase
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -14,6 +14,7 @@ const navItems = [
   { to: '/payments', icon: CreditCard, label: 'Collections' },
   { to: '/invoice', icon: FileText, label: 'Invoices' },
   { to: '/salaries', icon: Wallet, label: 'Salaries' },
+  { to: '/freelancers', icon: Briefcase, label: 'Freelancers' },
   { to: '/expenses', icon: Receipt, label: 'Expenses' },
   { to: '/emi', icon: TrendingDown, label: 'EMI Tracker' },
   { to: '/accounting', icon: BookOpen, label: 'Accounting' },

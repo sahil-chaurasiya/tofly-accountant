@@ -4,7 +4,7 @@ import { dashboardApi } from '../services/api';
 import { formatCurrency } from '../lib/utils';
 import { DashboardData } from '../types';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { TrendingDown, CreditCard, Wallet, Activity, ArrowRight, Calendar } from 'lucide-react';
+import { TrendingDown, CreditCard, Wallet, Activity, ArrowRight, Calendar, Briefcase } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { MONTHS, getCurrentMonthYear } from '../lib/utils';
 
@@ -66,7 +66,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Monthly Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <StatCard
           title={MONTHS[selMonth - 1]}
           value={formatCurrency(c?.currentMonthRevenue || 0)}
@@ -98,6 +98,14 @@ export default function DashboardPage() {
           color="bg-orange-500"
           sub={`${MONTHS[selMonth - 1]} ${selYear}`}
           to="/emi"
+        />
+        <StatCard
+          title="Freelancer Expense"
+          value={formatCurrency(c?.freelancerExpense || 0)}
+          icon={Briefcase}
+          color="bg-teal-500"
+          sub={`${MONTHS[selMonth - 1]} ${selYear}`}
+          to="/freelancers"
         />
       </div>
 
